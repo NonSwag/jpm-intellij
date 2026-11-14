@@ -19,7 +19,7 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        intellijIdeaCommunity("2025.2.6.4")
+        intellijIdea("2026.1.5.1")
         bundledPlugin("com.intellij.java")
         testFramework(TestFrameworkType.Platform)
     }
@@ -38,15 +38,15 @@ kotlin {
 
 intellijPlatform {
     pluginVerification {
-        // The oldest supported release and the newest one; every IDE in between shares their APIs.
+        // The oldest supported release (2026.1) and the newest one; every IDE in between shares their APIs.
         ides {
-            create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.2.6.4")
+            create(IntelliJPlatformType.IntellijIdea, "2026.1.5.1")
             create(IntelliJPlatformType.IntellijIdea, "2026.3")
         }
     }
     pluginConfiguration {
         ideaVersion {
-            sinceBuild = "252"
+            sinceBuild = "261"
             untilBuild = provider { null }
         }
     }

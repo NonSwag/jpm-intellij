@@ -17,12 +17,6 @@ class JpmProjectOpenProcessor : ProjectOpenProcessor() {
 
     override fun canOpenProject(file: VirtualFile): Boolean = projectDir(file) != null
 
-    @Suppress("OVERRIDE_DEPRECATION")
-    override fun doOpenProject(virtualFile: VirtualFile, projectToClose: Project?, forceOpenInNewFrame: Boolean): Project? {
-        val dir = projectDir(virtualFile) ?: return null
-        return PlatformProjectOpenProcessor.getInstance().doOpenProject(dir, projectToClose, forceOpenInNewFrame)
-    }
-
     override suspend fun openProjectAsync(virtualFile: VirtualFile, projectToClose: Project?, forceOpenInNewFrame: Boolean): Project? {
         val dir = projectDir(virtualFile) ?: return null
         return PlatformProjectOpenProcessor.getInstance().openProjectAsync(dir, projectToClose, forceOpenInNewFrame)

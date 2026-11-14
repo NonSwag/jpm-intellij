@@ -1,6 +1,6 @@
 # jpm for IntelliJ IDEA
 
-Opens [jpm](https://github.com/NonSwag/jpm) projects in IntelliJ IDEA (2025.2 and newer) and keeps them set
+Opens [jpm](https://github.com/NonSwag/jpm) projects in IntelliJ IDEA (2026.1 and newer) and keeps them set
 up: open a folder with a `project.jsonc` and it is ready to code in, with nothing to configure.
 
 ## What it does
