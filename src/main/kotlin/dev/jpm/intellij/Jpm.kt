@@ -1,7 +1,6 @@
 package dev.jpm.intellij
 
 import com.intellij.execution.configurations.GeneralCommandLine
-import com.intellij.execution.configurations.PathEnvironmentVariableUtil
 import com.intellij.execution.process.CapturingProcessHandler
 import com.intellij.execution.process.ProcessOutput
 import com.intellij.openapi.progress.ProgressIndicator
@@ -27,7 +26,8 @@ object Jpm {
         val home = System.getenv("JPM_HOME")?.let { Path.of(it) } ?: Path.of(System.getProperty("user.home"), ".jpm")
         val names = if (SystemInfo.isWindows) listOf("jpm.exe", "jpm.cmd") else listOf("jpm")
         for (n in names) home.resolve("bin").resolve(n).takeIf { Files.isRegularFile(it) }?.let { return it }
-        for (n in names) PathEnvironmentVariableUtil.findInPath(n)?.let { return it.toPath() }
+        val path = System.getenv("PATH").orEmpty().split(java.io.File.pathSeparatorChar).filter { it.isNotBlank() }
+        for (d in path) for (n in names) Path.of(d).resolve(n).takeIf { Files.isRegularFile(it) && Files.isExecutable(it) }?.let { return it }
         return null
     }
 

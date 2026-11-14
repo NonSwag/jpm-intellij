@@ -29,6 +29,11 @@ dependencies {
 
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        // Use the platform's interface default methods instead of copying them into every implementing class,
+        // which would look like overriding the platform's internal methods.
+        jvmDefault.set(org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode.NO_COMPATIBILITY)
+    }
 }
 
 intellijPlatform {
