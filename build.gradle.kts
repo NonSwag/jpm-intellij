@@ -1,3 +1,4 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
@@ -32,8 +33,10 @@ kotlin {
 
 intellijPlatform {
     pluginVerification {
+        // The oldest supported release and the newest one; every IDE in between shares their APIs.
         ides {
-            recommended()
+            create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.2.6.4")
+            create(IntelliJPlatformType.IntellijIdea, "2026.3")
         }
     }
     pluginConfiguration {

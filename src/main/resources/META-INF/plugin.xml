@@ -1,5 +1,5 @@
 <idea-plugin>
-    <id>dev.jpm.intellij</id>
+    <id>dev.jpm</id>
     <name>jpm</name>
     <vendor url="https://github.com/NonSwag/jpm">jpm</vendor>
     <description><![CDATA[
