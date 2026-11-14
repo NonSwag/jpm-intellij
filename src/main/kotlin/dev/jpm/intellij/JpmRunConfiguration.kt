@@ -1,0 +1,149 @@
+package dev.jpm.intellij
+
+import com.intellij.execution.ExecutionException
+import com.intellij.execution.Executor
+import com.intellij.execution.ProgramRunnerUtil
+import com.intellij.execution.RunManager
+import com.intellij.execution.configurations.CommandLineState
+import com.intellij.execution.configurations.ConfigurationFactory
+import com.intellij.execution.configurations.RunConfiguration
+import com.intellij.execution.configurations.RunConfigurationBase
+import com.intellij.execution.configurations.RunConfigurationOptions
+import com.intellij.execution.configurations.RunProfileState
+import com.intellij.execution.configurations.SimpleConfigurationType
+import com.intellij.execution.executors.DefaultRunExecutor
+import com.intellij.execution.process.KillableColoredProcessHandler
+import com.intellij.execution.process.ProcessEvent
+import com.intellij.execution.process.ProcessListener
+import com.intellij.execution.process.ProcessHandler
+import com.intellij.execution.process.ProcessTerminatedListener
+import com.intellij.execution.runners.ExecutionEnvironment
+import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
+import com.intellij.openapi.options.SettingsEditor
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.TextFieldWithBrowseButton
+import com.intellij.openapi.util.NotNullLazyValue
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.ui.RawCommandLineEditor
+import com.intellij.util.execution.ParametersListUtil
+import com.intellij.util.ui.FormBuilder
+import java.nio.file.Path
+import javax.swing.JComponent
+
+class JpmConfigurationType : SimpleConfigurationType(
+    ID, "jpm", "Runs a jpm command, such as build, test or start", NotNullLazyValue.createValue { JpmIcons.Jpm },
+) {
+    override fun createTemplateConfiguration(project: Project): RunConfiguration = JpmRunConfiguration(project, this, "jpm")
+
+    override fun getOptionsClass() = JpmRunOptions::class.java
+
+    companion object {
+        const val ID = "JpmRunConfiguration"
+
+        fun get(): JpmConfigurationType =
+            com.intellij.execution.configurations.ConfigurationTypeUtil.findConfigurationType(JpmConfigurationType::class.java)
+
+        /** Runs `jpm <args>` in the project, as a temporary run configuration the Run window can repeat. */
+        fun run(project: Project, args: List<String>, dir: Path? = null) {
+            val runManager = RunManager.getInstance(project)
+            val type = get()
+            val name = "jpm " + ParametersListUtil.join(args)
+            val settings = runManager.findConfigurationByTypeAndName(type, name)
+                ?: runManager.createConfiguration(name, type).also {
+                    it.isTemporary = true
+                    runManager.addConfiguration(it)
+                }
+            val config = settings.configuration as JpmRunConfiguration
+            config.arguments = ParametersListUtil.join(args)
+            config.workingDirectory = dir?.toString() ?: ""
+            runManager.selectedConfiguration = settings
+            ProgramRunnerUtil.executeConfiguration(settings, DefaultRunExecutor.getRunExecutorInstance())
+        }
+    }
+}
+
+class JpmRunOptions : RunConfigurationOptions() {
+    var arguments by string("")
+    var workingDirectory by string("")
+}
+
+class JpmRunConfiguration(project: Project, factory: ConfigurationFactory, name: String) :
+    RunConfigurationBase<JpmRunOptions>(project, factory, name) {
+
+    override fun getOptions(): JpmRunOptions = super.getOptions() as JpmRunOptions
+
+    var arguments: String
+        get() = options.arguments ?: ""
+        set(value) {
+            options.arguments = value
+        }
+
+    /** Empty runs in the project's folder. */
+    var workingDirectory: String
+        get() = options.workingDirectory ?: ""
+        set(value) {
+            options.workingDirectory = value
+        }
+
+    override fun getConfigurationEditor(): SettingsEditor<out RunConfiguration> = JpmRunConfigurationEditor(project)
+
+    override fun getState(executor: Executor, environment: ExecutionEnvironment): RunProfileState {
+        val dir = workingDirectory.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+            ?: Jpm.baseDir(project) ?: throw ExecutionException("The project has no folder")
+        val args = ParametersListUtil.parse(arguments)
+        return object : CommandLineState(environment) {
+            override fun startProcess(): ProcessHandler {
+                val cmd = try {
+                    Jpm.commandLine(dir, args, color = true)
+                } catch (e: JpmNotFoundException) {
+                    throw ExecutionException(e.message)
+                }
+                val handler = KillableColoredProcessHandler(cmd)
+                ProcessTerminatedListener.attach(handler)
+                handler.addProcessListener(object : ProcessListener {
+                    override fun processTerminated(event: ProcessEvent) = refreshAfter(dir)
+                })
+                return handler
+            }
+        }
+    }
+
+    /** Lets IntelliJ see what the command changed: built jars, and manifests that `add` or `update` edited. */
+    private fun refreshAfter(dir: Path) {
+        val files = buildList {
+            add(dir.resolve(Jpm.MANIFEST))
+            add(dir.resolve(Jpm.LOCKFILE))
+            add(dir.resolve("dist"))
+            JpmSync.get(project).info?.modules?.forEach {
+                add(Path.of(it.dir).resolve(Jpm.MANIFEST))
+                add(Path.of(it.dir).resolve("dist"))
+            }
+        }
+        // JpmFileListener reloads the project if a manifest or the lockfile changed.
+        LocalFileSystem.getInstance().refreshNioFiles(files, true, true, null)
+    }
+}
+
+class JpmRunConfigurationEditor(project: Project) : SettingsEditor<JpmRunConfiguration>() {
+    private val arguments = RawCommandLineEditor()
+    private val workingDirectory = TextFieldWithBrowseButton().apply {
+        addBrowseFolderListener(project, FileChooserDescriptorFactory.createSingleFolderDescriptor().withTitle("Working Directory"))
+    }
+
+    override fun resetEditorFrom(s: JpmRunConfiguration) {
+        arguments.text = s.arguments
+        workingDirectory.text = s.workingDirectory
+    }
+
+    override fun applyEditorTo(s: JpmRunConfiguration) {
+        s.arguments = arguments.text.trim()
+        s.workingDirectory = workingDirectory.text.trim()
+    }
+
+    override fun createEditor(): JComponent = FormBuilder.createFormBuilder()
+        .addLabeledComponent("Command:", arguments)
+        .addTooltip("What follows jpm, e.g. build, test --release or start server")
+        .addLabeledComponent("Working directory:", workingDirectory)
+        .addTooltip("Empty runs in the project folder")
+        .panel
+}

@@ -1,0 +1,52 @@
+<idea-plugin>
+    <id>dev.jpm.intellij</id>
+    <name>jpm</name>
+    <vendor url="https://github.com/NonSwag/jpm">jpm</vendor>
+    <description><![CDATA[
+    Support for <a href="https://github.com/NonSwag/jpm">jpm</a>, the Java package manager and build tool.
+    <ul>
+      <li>Opens jpm projects (<code>project.jsonc</code>) and sets them up: modules, source and test folders,
+          dependencies with sources, and the JDK the project asks for, installed by jpm when missing.</li>
+      <li>Reloads by itself when <code>project.jsonc</code> or <code>project.lock</code> change.</li>
+      <li>A jpm tool window with the project's tasks and scripts: build, test, start, dev, publish and more.</li>
+      <li>Moves Maven and Gradle projects to jpm with <code>jpm import</code>.</li>
+      <li>Creates new jpm projects from the New Project wizard.</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+    <depends>com.intellij.java</depends>
+
+    <resource-bundle>messages.JpmBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="jpm" displayType="BALLOON" bundle="messages.JpmBundle" key="notification.group"/>
+
+        <applicationService serviceImplementation="dev.jpm.intellij.JpmSettings"/>
+        <applicationConfigurable parentId="build.tools" instance="dev.jpm.intellij.JpmConfigurable"
+                                 id="dev.jpm.intellij.settings" displayName="jpm"/>
+
+        <postStartupActivity implementation="dev.jpm.intellij.JpmStartup"/>
+        <projectOpenProcessor implementation="dev.jpm.intellij.JpmProjectOpenProcessor"/>
+        <newProjectWizard.generator implementation="dev.jpm.intellij.JpmNewProjectWizard"/>
+
+        <toolWindow id="jpm" anchor="right" icon="dev.jpm.intellij.JpmIcons.ToolWindow"
+                    factoryClass="dev.jpm.intellij.JpmToolWindowFactory"/>
+
+        <configurationType implementation="dev.jpm.intellij.JpmConfigurationType"/>
+    </extensions>
+
+    <projectListeners>
+        <listener class="dev.jpm.intellij.JpmFileListener" topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
+    </projectListeners>
+
+    <actions>
+        <action id="Jpm.Reload" class="dev.jpm.intellij.ReloadAction" icon="AllIcons.Actions.Refresh">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action id="Jpm.Migrate" class="dev.jpm.intellij.MigrateAction">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
