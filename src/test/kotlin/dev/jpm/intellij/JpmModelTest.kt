@@ -61,6 +61,11 @@ class JpmModelTest {
     }
 
     @Test
+    fun jpmOutputIsShownAsTextInNotifications() {
+        assertEquals("add it: `jpm add -r &lt;url&gt; a:b`<br>or list it", notificationText("add it: `jpm add -r <url> a:b`\nor list it\n"))
+    }
+
+    @Test
     fun excludesCacheButKeepsGeneratedSources() {
         val root = tmp.root.toPath()
         val cache = root.resolve(".cache")

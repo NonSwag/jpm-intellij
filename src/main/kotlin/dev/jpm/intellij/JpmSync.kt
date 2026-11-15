@@ -156,7 +156,7 @@ class JpmSync(private val project: Project) : Disposable {
     }
 
     private fun notify(title: String, content: String, type: NotificationType, actions: List<NotificationAction> = emptyList()) {
-        val n = NotificationGroupManager.getInstance().getNotificationGroup("jpm").createNotification(title, content, type)
+        val n = NotificationGroupManager.getInstance().getNotificationGroup("jpm").createNotification(title, notificationText(content), type)
         actions.forEach { n.addAction(it) }
         n.notify(project)
     }

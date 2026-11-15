@@ -59,7 +59,7 @@ object JpmMigration {
                 val text = clean(out.stderr + "\n" + out.stdout)
                 val group = NotificationGroupManager.getInstance().getNotificationGroup("jpm")
                 if (out.exitCode != 0) {
-                    group.createNotification("Migration to jpm failed", text, NotificationType.ERROR).notify(project)
+                    group.createNotification("Migration to jpm failed", notificationText(text), NotificationType.ERROR).notify(project)
                     return
                 }
                 LocalFileSystem.getInstance().refreshNioFiles(listOf(dir.resolve(Jpm.MANIFEST), dir.resolve(Jpm.LOCKFILE)))

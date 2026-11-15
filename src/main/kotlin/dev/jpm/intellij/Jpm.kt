@@ -90,6 +90,10 @@ object Jpm {
         if (isJpmProject(dir)) null else buildFiles.firstOrNull { Files.isRegularFile(dir.resolve(it)) }
 }
 
+/** jpm's output as notification text: notifications are HTML, so <url> and the like must not be read as tags. */
+fun notificationText(output: String): String =
+    com.intellij.openapi.util.text.StringUtil.escapeXmlEntities(output.trim()).replace("\n", "<br>")
+
 class JpmNotFoundException : RuntimeException(
     "jpm is not installed. Install it with: curl -fsSL https://github.com/NonSwag/jpm/releases/latest/download/install.sh | sh " +
         "(Windows: irm https://github.com/NonSwag/jpm/releases/latest/download/install.ps1 | iex), " +
