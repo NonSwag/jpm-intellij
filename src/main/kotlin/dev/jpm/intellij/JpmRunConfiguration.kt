@@ -99,7 +99,7 @@ class JpmRunConfiguration(project: Project, factory: ConfigurationFactory, name:
                 } catch (e: JpmNotFoundException) {
                     throw ExecutionException(e.message)
                 }
-                val handler = KillableColoredProcessHandler(cmd)
+                val handler = JpmProcessHandler(cmd)
                 ProcessTerminatedListener.attach(handler)
                 handler.addProcessListener(object : ProcessListener {
                     override fun processTerminated(event: ProcessEvent) = refreshAfter(dir)
@@ -148,3 +148,6 @@ class JpmRunConfigurationEditor(project: Project) : SettingsEditor<JpmRunConfigu
         .addTooltip("Empty runs in the project folder")
         .panel
 }
+
+/** The process of a jpm run configuration; its class tells [JpmUnloader] which Run tabs are jpm's. */
+class JpmProcessHandler(cmd: com.intellij.execution.configurations.GeneralCommandLine) : KillableColoredProcessHandler(cmd)

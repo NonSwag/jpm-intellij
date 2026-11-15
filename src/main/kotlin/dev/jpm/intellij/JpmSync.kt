@@ -60,13 +60,20 @@ class JpmSync(private val project: Project) : Disposable {
         private set
 
     private val running = AtomicBoolean(false)
+
+    /** The progress of the running load, so [stop] can cancel it. */
+    @Volatile
+    private var indicator: ProgressIndicator? = null
+
+    @Volatile
+    private var stopped = false
     private val again = AtomicBoolean(false)
     private val alarm = Alarm(Alarm.ThreadToUse.POOLED_THREAD, this)
     private var lastInputs: String? = null
 
     /** Loads the project now. Explicit reloads always run; automatic ones only when the manifests changed. */
     fun reload(explicit: Boolean = true) {
-        if (project.isDisposed || roots().isEmpty()) return
+        if (stopped || project.isDisposed || roots().isEmpty()) return
         if (!explicit && inputsHash() == lastInputs && infos != null) return
         if (!running.compareAndSet(false, true)) {
             again.set(true)
@@ -76,6 +83,7 @@ class JpmSync(private val project: Project) : Disposable {
         publish()
         object : Task.Backgroundable(project, "Loading jpm project", true) {
             override fun run(indicator: ProgressIndicator) {
+                this@JpmSync.indicator = indicator
                 val roots = roots()
                 val loaded = collectInfos(roots, previous) { dir ->
                     indicator.checkCanceled()
@@ -119,6 +127,7 @@ class JpmSync(private val project: Project) : Disposable {
             }
 
             override fun onFinished() {
+                indicator = null
                 loading = false
                 running.set(false)
                 publish()
@@ -216,7 +225,16 @@ class JpmSync(private val project: Project) : Disposable {
         return if (dir == base) dir.fileName?.toString() ?: dir.toString() else base.relativize(dir).toString()
     }
 
-    override fun dispose() {}
+    /** Stops loading for good: the plugin is being unloaded. */
+    fun stop() {
+        stopped = true
+        alarm.cancelAllRequests()
+        indicator?.cancel()
+    }
+
+    override fun dispose() {
+        stop()
+    }
 
     fun interface Listener {
         fun changed()

@@ -44,6 +44,10 @@
         <ProviderFactory implementation="dev.jpm.intellij.JpmSchemaProviderFactory"/>
     </extensions>
 
+    <applicationListeners>
+        <listener class="dev.jpm.intellij.JpmUnloader" topic="com.intellij.ide.plugins.DynamicPluginListener"/>
+    </applicationListeners>
+
     <projectListeners>
         <listener class="dev.jpm.intellij.JpmFileListener" topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
     </projectListeners>
