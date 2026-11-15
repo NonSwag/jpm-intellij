@@ -109,7 +109,7 @@
     },
     "dev": {
       "description": "Compile-time-only dependencies, never shipped: annotation processors, compile-only APIs (Maven's provided).",
-      "$ref": "#/definitions/devDependencies"
+      "$ref": "#/definitions/devOnlyDependencies"
     },
     "test": {
       "description": "Dependencies for the tests only.",
@@ -337,6 +337,32 @@
         }
       }
     },
+    "devDependencyOptions": {
+      "type": "object",
+      "required": [
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "$ref": "#/definitions/versionSpec"
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Transitive dependencies to leave out: group:artifact, group:* or group.",
+          "items": {
+            "type": "string",
+            "pattern": "^[^:\\s]+(:[^:\\s]+)?$"
+          },
+          "uniqueItems": true
+        },
+        "api": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pass this dependency on to consumers' compile classpaths (Gradle's compileOnlyApi): modules and projects that depend on this one compile against it too. It is never on a runtime classpath or in a bundle; the platform provides it."
+        }
+      }
+    },
     "dependencies": {
       "type": "object",
       "propertyNames": {
@@ -349,6 +375,22 @@
           },
           {
             "$ref": "#/definitions/runtimeDependencyOptions"
+          }
+        ]
+      }
+    },
+    "devOnlyDependencies": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/definitions/dependencyKey"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/versionSpec"
+          },
+          {
+            "$ref": "#/definitions/devDependencyOptions"
           }
         ]
       }
