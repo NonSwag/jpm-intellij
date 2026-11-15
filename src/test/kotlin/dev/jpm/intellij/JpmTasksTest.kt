@@ -38,7 +38,7 @@ class JpmTasksTest {
     @Test
     fun aBareProjectOffersOnlyWhatRuns() {
         val info = project(false, module("lib", "/p"))
-        assertEquals(listOf("build", "clean", "build --release", "install", "update", "outdated", "publish --local"), labels(info))
+        assertEquals(listOf("build", "clean", "build --release", "build --bundle", "install", "update", "outdated", "publish --local"), labels(info))
     }
 
     @Test
@@ -70,7 +70,7 @@ class JpmTasksTest {
         assertEquals(Path.of("/p/app"), start.dir)
         assertTrue(labels(info).contains("test"))
 
-        assertEquals(listOf("build"), JpmTasks.forModule(info, api).map { it.label }, )
+        assertEquals(listOf("build", "build --bundle"), JpmTasks.forModule(info, api).map { it.label })
         val appTasks = JpmTasks.forModule(info, app)
         assertEquals(listOf("build", "test", "start", "dev", "build --bundle", "build --native", "publish", "publish --local", "run gen"),
             appTasks.map { it.label })

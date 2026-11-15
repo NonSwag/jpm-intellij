@@ -8,8 +8,8 @@ data class JpmTask(val label: String, val args: List<String>, val hint: String?,
 data class JpmTaskGroup(val name: String, val tasks: List<JpmTask>)
 
 /**
- * The commands that can actually run for a project or module: no test task without tests, no start, dev,
- * bundle or native build without a main, and publishing to repositories only when they are configured
+ * The commands that can actually run for a project or module: no test task without tests, no start, dev
+ * or native build without a main (a bundle without one is a flat jar, as plugins need), and publishing to repositories only when they are configured
  * ("publish --local" needs none).
  */
 object JpmTasks {
@@ -29,10 +29,9 @@ object JpmTasks {
 
         val build = ArrayList<JpmTask>()
         build.add(JpmTask("build --release", listOf("build", "--release"), "with the release profile", dir))
-        if (runnable.isNotEmpty()) {
-            build.add(JpmTask("build --bundle", listOf("build", "--bundle"), "one runnable jar with its dependencies", dir))
-            build.add(JpmTask("build --native", listOf("build", "--native"), "GraalVM native executable", dir))
-        }
+        build.add(JpmTask("build --bundle", listOf("build", "--bundle"),
+            if (runnable.isEmpty()) "one jar with the runtime dependencies merged in" else "with the runtime dependencies", dir))
+        if (runnable.isNotEmpty()) build.add(JpmTask("build --native", listOf("build", "--native"), "GraalVM native executable", dir))
         groups.add(JpmTaskGroup("Build", build))
 
         groups.add(JpmTaskGroup("Dependencies", listOf(
@@ -55,11 +54,9 @@ object JpmTasks {
         val out = ArrayList<JpmTask>()
         out.add(JpmTask("build", listOf("build"), null, dir))
         if (m.hasTests) out.add(JpmTask("test", listOf("test"), null, dir))
-        if (!m.main.isNullOrEmpty()) {
-            out.addAll(runTasks(m, dir))
-            out.add(JpmTask("build --bundle", listOf("build", "--bundle"), null, dir))
-            out.add(JpmTask("build --native", listOf("build", "--native"), null, dir))
-        }
+        if (!m.main.isNullOrEmpty()) out.addAll(runTasks(m, dir))
+        out.add(JpmTask("build --bundle", listOf("build", "--bundle"), if (m.main.isNullOrEmpty()) "flat jar with the runtime dependencies" else null, dir))
+        if (!m.main.isNullOrEmpty()) out.add(JpmTask("build --native", listOf("build", "--native"), null, dir))
         val skip = (m.extensions?.get("publish") as? Map<*, *>)?.get("skip") == true
         if (!skip) {
             val repos = (repositories(info.extensions) + repositories(m.extensions)).distinct()

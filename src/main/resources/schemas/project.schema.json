@@ -237,7 +237,7 @@
         "bundle"
       ],
       "default": "jar",
-      "description": "What `jpm build` produces: a jar, or a bundle (one runnable jar with its dependencies nested inside, internal modules isolated)."
+      "description": "What `jpm build` produces: a jar, or a bundle with the runtime dependencies (a runnable jar-in-jar with internal modules isolated when there is a main, one flat jar when there is none, as plugins need)."
     },
     "extensions": {
       "type": "object",
