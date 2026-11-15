@@ -1,19 +1,17 @@
 name: CI
 
 on:
+  # Releases are not started by tags: CI creates the tag when pluginVersion changes (see the version job).
   push:
     branches: ["**"]
-    # releases are tagged with the plain version: 0.1.0
-    tags: ["[0-9]*.[0-9]*.[0-9]*"]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  # Runs first and decides whether this run releases (outputs.release): a version tag was pushed, or the
-  # main branch has a pluginVersion that has no tag yet. A pushed tag that does not match pluginVersion
-  # stops the run before anything is built.
+  # Runs first and decides whether this run releases (outputs.release): the main branch has a
+  # pluginVersion that has no tag yet, so CI tags this commit and releases it.
   version:
     name: version
     runs-on: ubuntu-latest
@@ -22,26 +20,13 @@ jobs:
       version: ${{ steps.decide.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check that the tag matches the plugin version
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          version=$(sed -n 's/^pluginVersion=//p' gradle.properties)
-          if [ "$GITHUB_REF_NAME" != "$version" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match pluginVersion=$version in gradle.properties. Set pluginVersion=$GITHUB_REF_NAME, commit, and tag that commit."
-            exit 1
-          fi
-          echo "Releasing $version"
-
       - name: Decide whether to release
         id: decide
         run: |
           version=$(sed -n 's/^pluginVersion=//p' gradle.properties)
           release=false
-          if [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
-            release=true
-          elif [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = "refs/heads/${{ github.event.repository.default_branch }}" ] && \
-               ! git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null && \
-               printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = "refs/heads/${{ github.event.repository.default_branch }}" ] && \
+             ! git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null; then
             release=true
             echo "::notice::$version has no release yet: releasing it"
           fi
@@ -131,7 +116,9 @@ jobs:
             exit 0
           fi
           # creates the tag on this commit when the release was started by a version change
-          gh release create "$VERSION" release/* --target "$GITHUB_SHA" --title "jpm for IntelliJ IDEA $VERSION" --generate-notes
+          # 1.0.0-rc1 and the like are prereleases: they never become releases/latest
+          pre=""; case "$VERSION" in *-*) pre="--prerelease" ;; esac
+          gh release create "$VERSION" release/* $pre --target "$GITHUB_SHA" --title "jpm for IntelliJ IDEA $VERSION" --generate-notes
 
   marketplace:
     name: JetBrains Marketplace

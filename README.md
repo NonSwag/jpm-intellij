@@ -78,9 +78,8 @@ Install the zip with **Settings | Plugins | ⚙ | Install Plugin from Disk…**.
 ## Releasing
 
 Change `pluginVersion` in `gradle.properties` and push to `main`: a version that has no release yet is
-tagged (plain, no `v` prefix) and released by that run. Pushing a tag such as `0.1.0` yourself works too;
-it must match `pluginVersion`. A version is never released twice, and versions like `1.0.0-rc1` are only
-released by pushing their tag.
+tagged (plain, no `v` prefix) and released by that run; there is no tag to push by hand. A version is
+never released twice, and versions like `1.0.0-rc1` become GitHub prereleases.
 
 CI tests and verifies the plugin, then publishes a GitHub release with the zip, `SHA256SUMS` and the
 `updatePlugins.xml` that installed IDEs update from. With a `JETBRAINS_MARKETPLACE_TOKEN` secret it also
