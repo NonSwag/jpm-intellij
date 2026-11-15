@@ -12,7 +12,7 @@
       <li>Reloads by itself when <code>project.jsonc</code> or <code>project.lock</code> change.</li>
       <li>A jpm tool window with the project's tasks and scripts: build, test, start, dev, publish and more.</li>
       <li>Moves Maven and Gradle projects to jpm with <code>jpm import</code>.</li>
-      <li>Creates new jpm projects from the New Project wizard.</li>
+      <li>Creates jpm projects and modules: jpm is a build system in the Java New Project and New Module wizards, and new modules join the jpm workspace they are created in.</li>
     </ul>
     ]]></description>
 
@@ -33,6 +33,7 @@
         <postStartupActivity implementation="dev.jpm.intellij.JpmStartup"/>
         <projectOpenProcessor implementation="dev.jpm.intellij.JpmProjectOpenProcessor"/>
         <newProjectWizard.generator implementation="dev.jpm.intellij.JpmNewProjectWizard"/>
+        <newProjectWizard.java.buildSystem implementation="dev.jpm.intellij.JpmBuildSystemWizard"/>
 
         <toolWindow id="jpm" anchor="right" icon="dev.jpm.intellij.JpmIcons.ToolWindow"
                     factoryClass="dev.jpm.intellij.JpmToolWindowFactory"/>

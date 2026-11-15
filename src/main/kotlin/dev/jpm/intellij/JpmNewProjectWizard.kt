@@ -8,13 +8,8 @@ import com.intellij.ide.wizard.NewProjectWizardChainStep.Companion.nextStep
 import com.intellij.ide.wizard.NewProjectWizardStep
 import com.intellij.ide.wizard.RootNewProjectWizardStep
 import com.intellij.ide.util.projectWizard.WizardContext
-import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.dsl.builder.Panel
-import java.nio.file.Files
-import java.nio.file.Path
 import javax.swing.Icon
 
 /**
@@ -44,22 +39,7 @@ class JpmNewProjectWizard : GeneratorNewProjectWizard {
         override fun setupProject(project: Project) {
             val dir = Jpm.baseDir(project) ?: return
             if (Jpm.isJpmProject(dir)) return
-            Files.createDirectories(dir)
-            val output = ProgressManager.getInstance().runProcessWithProgressSynchronously<String?, RuntimeException>({
-                try {
-                    val out = Jpm.run(dir, listOf("init", dir.fileName.toString()), ProgressManager.getInstance().progressIndicator)
-                    if (out.exitCode == 0) null else out.stderr.ifBlank { out.stdout }
-                } catch (e: JpmNotFoundException) {
-                    e.message
-                }
-            }, "Creating jpm Project", true, project)
-            if (output != null) {
-                Messages.showErrorDialog(project, output.trim(), "jpm init Failed")
-                return
-            }
-            LocalFileSystem.getInstance().refreshNioFiles(listOf(dir), true, true) {
-                JpmSync.get(project).reload()
-            }
+            JpmModuleCreator.create(project, dir, dir.fileName.toString(), addToWorkspace = false)
         }
     }
 }

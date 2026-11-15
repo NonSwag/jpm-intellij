@@ -35,7 +35,11 @@ up: open a folder with a `project.jsonc` and it is ready to code in, with nothin
   **Tools | Migrate to jpm…**): it shows what `jpm import --dry-run` would write and what does not carry
   over, then runs `jpm import`. The Maven or Gradle files are not touched. See
   [MIGRATION.md](https://github.com/java-package-manager/jpm/blob/main/MIGRATION.md).
-- **New projects.** **File | New | Project | jpm** creates a project with `jpm init`.
+- **New projects and modules.** jpm is a build system in the Java wizard, next to IntelliJ, Maven and
+  Gradle (**File | New | Project** or **File | New | Module**, Java, Build system: jpm), and **File | New |
+  Project | jpm** is there too; both run `jpm init`, and there is no JDK to pick. A new module inside a jpm
+  workspace is added to the workspace's `"workspace"` list (comments and layout of `project.jsonc` are kept);
+  elsewhere it becomes a jpm project of its own, which the plugin loads as a nested project.
 
 ## Installing
 
