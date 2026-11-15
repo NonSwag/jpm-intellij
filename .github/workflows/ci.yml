@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: ["**"]
+    # releases are tagged with the plain version: 0.1.0
+    tags: ["[0-9]*.[0-9]*.[0-9]*"]
   pull_request:
 
 permissions:
@@ -29,3 +31,84 @@ jobs:
         with:
           name: jpm-intellij
           path: build/distributions/*.zip
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that the tag matches the plugin version
+        run: |
+          version=$(sed -n 's/^pluginVersion=//p' gradle.properties)
+          if [ "$GITHUB_REF_NAME" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match pluginVersion=$version in gradle.properties"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jpm-intellij
+          path: release
+
+      - name: Assemble release files
+        run: |
+          set -eux
+          v="$GITHUB_REF_NAME"
+          zip="jpm-intellij-$v.zip"
+          test -f "release/$zip"
+          since=$(unzip -p "release/$zip" "jpm-intellij/lib/jpm-intellij-$v.jar" > plugin.jar && unzip -p plugin.jar META-INF/plugin.xml \
+            | sed -n 's/.*since-build="\([^"]*\)".*/\1/p' | head -n 1)
+          test -n "$since"
+          # A custom plugin repository: IntelliJ installs and updates the plugin from
+          # https://github.com/<repo>/releases/latest/download/updatePlugins.xml
+          cat > release/updatePlugins.xml <<XML
+          <?xml version="1.0" encoding="UTF-8"?>
+          <plugins>
+            <plugin id="dev.jpm" version="$v" url="https://github.com/$GITHUB_REPOSITORY/releases/download/$v/$zip">
+              <idea-version since-build="$since"/>
+              <name>jpm</name>
+              <vendor url="https://github.com/NonSwag/jpm">jpm</vendor>
+              <description>Support for jpm, the Java package manager and build tool.</description>
+            </plugin>
+          </plugins>
+          XML
+          printf '%s\n' "$v" > release/VERSION
+          cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS && cat updatePlugins.xml
+
+      - name: Publish on GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --title "jpm for IntelliJ IDEA $GITHUB_REF_NAME" --generate-notes
+
+  marketplace:
+    name: JetBrains Marketplace
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+      PLUGIN_SIGNING_CERTIFICATE_CHAIN: ${{ secrets.PLUGIN_SIGNING_CERTIFICATE_CHAIN }}
+      PLUGIN_SIGNING_PRIVATE_KEY: ${{ secrets.PLUGIN_SIGNING_PRIVATE_KEY }}
+      PLUGIN_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.PLUGIN_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.JETBRAINS_MARKETPLACE_TOKEN != ''
+      - uses: actions/setup-java@v4
+        if: env.JETBRAINS_MARKETPLACE_TOKEN != ''
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        if: env.JETBRAINS_MARKETPLACE_TOKEN != ''
+      - name: Publish to the JetBrains Marketplace
+        if: env.JETBRAINS_MARKETPLACE_TOKEN != ''
+        # signPlugin runs only when the signing secrets are set; the Marketplace signs unsigned uploads itself.
+        run: ./gradlew publishPlugin
+      - name: Skipped
+        if: env.JETBRAINS_MARKETPLACE_TOKEN == ''
+        run: echo "No JETBRAINS_MARKETPLACE_TOKEN secret; the release is on GitHub only."

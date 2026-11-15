@@ -8,7 +8,8 @@ plugins {
 }
 
 group = "dev.jpm"
-version = "0.1.0"
+// The release tag must match this version (see .github/workflows/ci.yml).
+version = providers.gradleProperty("pluginVersion").get()
 
 repositories {
     mavenCentral()
@@ -43,6 +44,15 @@ intellijPlatform {
             create(IntelliJPlatformType.IntellijIdea, "2026.1.5.1")
             create(IntelliJPlatformType.IntellijIdea, "2026.3")
         }
+    }
+    // Marketplace publishing and signing, used by the release job when these secrets are set.
+    publishing {
+        token = providers.environmentVariable("JETBRAINS_MARKETPLACE_TOKEN")
+    }
+    signing {
+        certificateChain = providers.environmentVariable("PLUGIN_SIGNING_CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PLUGIN_SIGNING_PRIVATE_KEY")
+        password = providers.environmentVariable("PLUGIN_SIGNING_PRIVATE_KEY_PASSWORD")
     }
     pluginConfiguration {
         ideaVersion {

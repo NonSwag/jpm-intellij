@@ -28,6 +28,18 @@ up: open a folder with a `project.jsonc` and it is ready to code in, with nothin
   [MIGRATION.md](https://github.com/NonSwag/jpm/blob/main/MIGRATION.md).
 - **New projects.** **File | New | Project | jpm** creates a project with `jpm init`.
 
+## Installing
+
+Add the plugin's update site once, and IntelliJ installs it and keeps it up to date like any other plugin:
+**Settings | Plugins | ⚙ | Manage Plugin Repositories… | +**, then
+
+```
+https://github.com/NonSwag/jpm-intellij/releases/latest/download/updatePlugins.xml
+```
+
+and search for **jpm** on the Marketplace tab. Each release's zip can also be installed by hand with
+**Settings | Plugins | ⚙ | Install Plugin from Disk…**.
+
 ## Requirements
 
 jpm 0.5.0 or newer (for `jpm info --ide`), installed in `~/.jpm/bin` by the jpm install script or on `PATH`.
@@ -49,6 +61,20 @@ the configured modules and writes to `.cache/idea/`, apart from jpm's output.
 ```
 
 Install the zip with **Settings | Plugins | ⚙ | Install Plugin from Disk…**.
+
+## Releasing
+
+Set `pluginVersion` in `gradle.properties`, commit, and push a tag with exactly that version, without a `v`:
+
+```sh
+git tag 0.1.0 && git push origin 0.1.0
+```
+
+CI tests and verifies the plugin, then publishes a GitHub release with the zip, `SHA256SUMS` and the
+`updatePlugins.xml` that installed IDEs update from. With a `JETBRAINS_MARKETPLACE_TOKEN` secret it also
+publishes to the JetBrains Marketplace (the first upload has to be made by hand on the Marketplace), signed
+when `PLUGIN_SIGNING_CERTIFICATE_CHAIN`, `PLUGIN_SIGNING_PRIVATE_KEY` and
+`PLUGIN_SIGNING_PRIVATE_KEY_PASSWORD` are set.
 
 ## License
 
