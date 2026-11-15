@@ -7,6 +7,8 @@
     <ul>
       <li>Opens jpm projects (<code>project.jsonc</code>) and sets them up: modules, source and test folders,
           dependencies with sources, and the JDK the project asks for, installed by jpm when missing.</li>
+      <li>Completion, documentation and validation in <code>project.jsonc</code>, from jpm's JSON Schema.</li>
+      <li>Finds jpm projects in nested folders too, and loads each of them.</li>
       <li>Reloads by itself when <code>project.jsonc</code> or <code>project.lock</code> change.</li>
       <li>A jpm tool window with the project's tasks and scripts: build, test, start, dev, publish and more.</li>
       <li>Moves Maven and Gradle projects to jpm with <code>jpm import</code>.</li>
@@ -17,6 +19,7 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
     <depends>com.intellij.java</depends>
+    <depends>com.intellij.modules.json</depends>
 
     <resource-bundle>messages.JpmBundle</resource-bundle>
 
@@ -35,6 +38,10 @@
                     factoryClass="dev.jpm.intellij.JpmToolWindowFactory"/>
 
         <configurationType implementation="dev.jpm.intellij.JpmConfigurationType"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="JavaScript.JsonSchema">
+        <ProviderFactory implementation="dev.jpm.intellij.JpmSchemaProviderFactory"/>
     </extensions>
 
     <projectListeners>

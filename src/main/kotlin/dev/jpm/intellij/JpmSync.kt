@@ -22,10 +22,29 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Loads the jpm project into IntelliJ, on request or when its manifests change. */
 @Service(Service.Level.PROJECT)
 class JpmSync(private val project: Project) : Disposable {
-    /** The project as jpm last reported it, or null before the first load. */
+    /** Each jpm project as jpm last reported it, or null before the first load. */
     @Volatile
-    var info: JpmProjectInfo? = null
+    var infos: List<JpmProjectInfo>? = null
         private set
+
+    /** The first jpm project, for callers that need just one. */
+    val info: JpmProjectInfo? get() = infos?.firstOrNull()
+
+    @Volatile
+    private var cachedRoots: List<Path>? = null
+
+    /** The folders of the jpm projects in this project (see [Jpm.findRoots]), searched once and after changes. */
+    fun roots(): List<Path> {
+        cachedRoots?.let { return it }
+        val found = Jpm.baseDir(project)?.let { Jpm.findRoots(it) }.orEmpty()
+        cachedRoots = found
+        return found
+    }
+
+    /** A project.jsonc was added, removed or moved: search for jpm projects again on the next use. */
+    fun rootsChanged() {
+        cachedRoots = null
+    }
 
     /** The last load's error, shown in the tool window. */
     @Volatile
@@ -43,8 +62,8 @@ class JpmSync(private val project: Project) : Disposable {
 
     /** Loads the project now. Explicit reloads always run; automatic ones only when the manifests changed. */
     fun reload(explicit: Boolean = true) {
-        if (project.isDisposed || !Jpm.isJpmProject(project)) return
-        if (!explicit && inputsHash() == lastInputs && info != null) return
+        if (project.isDisposed || roots().isEmpty()) return
+        if (!explicit && inputsHash() == lastInputs && infos != null) return
         if (!running.compareAndSet(false, true)) {
             again.set(true)
             return
@@ -53,23 +72,28 @@ class JpmSync(private val project: Project) : Disposable {
         publish()
         object : Task.Backgroundable(project, "Loading jpm project", true) {
             override fun run(indicator: ProgressIndicator) {
-                indicator.text = "jpm info"
-                val dir = Jpm.baseDir(project) ?: return
-                val out = Jpm.run(dir, listOf("info", "--json", "--ide"), indicator)
-                if (indicator.isCanceled) return
-                if (out.exitCode != 0) {
-                    fail(out.stderr.ifBlank { out.stdout }.trim().lines().filterNot { it.startsWith("Picked up ") }.joinToString("\n"))
-                    return
+                val roots = roots()
+                val parsed = ArrayList<JpmProjectInfo>()
+                for (dir in roots) {
+                    indicator.text = "jpm info in ${relative(dir)}"
+                    val out = Jpm.run(dir, listOf("info", "--json", "--ide"), indicator)
+                    if (indicator.isCanceled) return
+                    if (out.exitCode != 0) {
+                        // Applying the others would drop this project's modules, so nothing changes until it loads.
+                        val msg = out.stderr.ifBlank { out.stdout }.trim().lines().filterNot { it.startsWith("Picked up ") }.joinToString("\n")
+                        fail(if (roots.size > 1) "${relative(dir)}: $msg" else msg)
+                        return
+                    }
+                    parsed.add(JpmProjectInfo.parse(out.stdout))
                 }
-                val parsed = JpmProjectInfo.parse(out.stdout)
                 ApplicationManager.getApplication().invokeAndWait({
                     if (!project.isDisposed) JpmProjectSetup.apply(project, parsed)
                 }, com.intellij.openapi.application.ModalityState.nonModal())
-                info = parsed
+                infos = parsed
                 error = null
                 // jpm info may have written project.lock; that is part of this load, not a new change.
                 lastInputs = inputsHash()
-                parsed.modules.mapNotNull { m -> m.javaError?.let { "${m.name}: $it" } }.takeIf { it.isNotEmpty() }?.let {
+                parsed.flatMap { it.modules }.mapNotNull { m -> m.javaError?.let { "${m.name}: $it" } }.takeIf { it.isNotEmpty() }?.let {
                     notify("The JDK for this project is not available", it.joinToString("\n"), NotificationType.WARNING)
                 }
             }
@@ -124,18 +148,25 @@ class JpmSync(private val project: Project) : Disposable {
 
     /** A hash of every manifest and lockfile of the project, to see whether a reload would change anything. */
     private fun inputsHash(): String {
-        val dir = Jpm.baseDir(project) ?: return ""
         val md = MessageDigest.getInstance("SHA-256")
         val files = buildList {
-            add(dir.resolve(Jpm.MANIFEST))
-            add(dir.resolve(Jpm.LOCKFILE))
-            info?.modules?.forEach { add(Path.of(it.dir).resolve(Jpm.MANIFEST)) }
+            for (dir in roots()) {
+                add(dir.resolve(Jpm.MANIFEST))
+                add(dir.resolve(Jpm.LOCKFILE))
+            }
+            infos?.forEach { i -> i.modules.forEach { add(Path.of(it.dir).resolve(Jpm.MANIFEST)) } }
         }.distinct()
         for (f in files) {
             md.update(f.toString().toByteArray())
             if (Files.isRegularFile(f)) md.update(Files.readAllBytes(f))
         }
         return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /** A folder as shown to the user: relative to the project folder. */
+    fun relative(dir: Path): String {
+        val base = Jpm.baseDir(project) ?: return dir.toString()
+        return if (dir == base) dir.fileName?.toString() ?: dir.toString() else base.relativize(dir).toString()
     }
 
     override fun dispose() {}

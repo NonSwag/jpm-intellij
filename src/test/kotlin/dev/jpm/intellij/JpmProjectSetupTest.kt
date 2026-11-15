@@ -96,6 +96,41 @@ class JpmProjectSetupTest : HeavyPlatformTestCase() {
         assertFalse(LibraryTablesRegistrar.getInstance().getLibraryTable(project).libraries.any { it.name!!.contains("commons-lang3") })
     }
 
+    fun testLoadsJpmProjectsInNestedFolders() {
+        System.getenv("JPM_TEST_EXE")?.let { JpmSettings.get().state.jpmPath = it }
+        if (Jpm.executable() == null) {
+            println("Skipped: no jpm (install it, or set JPM_TEST_EXE)")
+            return
+        }
+        val base = Files.createTempDirectory("jpm-nested")
+        try {
+            fun write(rel: String, text: String) = base.resolve(rel).also { Files.createDirectories(it.parent) }.writeText(text)
+            // two projects in subfolders, both with a module called "app"
+            write("backend/project.jsonc", """{ "name": "app", "version": "1.0.0", "java": "21" }""")
+            write("backend/src/b/App.java", "package b; public class App {}")
+            write("tools/project.jsonc", """{ "name": "tools", "version": "1.0.0", "workspace": ["app"] }""")
+            write("tools/app/project.jsonc", """{ "name": "app", "version": "1.0.0", "java": "21" }""")
+            write("tools/app/src/t/App.java", "package t; public class App {}")
+
+            val roots = Jpm.findRoots(base)
+            assertEquals(listOf(base.resolve("backend"), base.resolve("tools")), roots)
+            val infos = roots.map { dir ->
+                val out = Jpm.run(dir, listOf("info", "--json", "--ide"), null)
+                assertEquals(out.stderr, 0, out.exitCode)
+                JpmProjectInfo.parse(out.stdout)
+            }
+            ApplicationManager.getApplication().invokeAndWait { JpmProjectSetup.apply(project, infos) }
+
+            val modules = ModuleManager.getInstance(project).modules.associateBy { it.name }
+            assertSameElements(modules.keys, "app", "tools", "tools.app")
+            fun sources(name: String) = ModuleRootManager.getInstance(modules.getValue(name)).sourceRootUrls.filter { it.endsWith("/src") }
+            assertTrue(sources("app").single().endsWith("backend/src"))
+            assertTrue(sources("tools.app").single().endsWith("tools/app/src"))
+        } finally {
+            base.toFile().deleteRecursively()
+        }
+    }
+
     override fun tearDown() {
         try {
             ApplicationManager.getApplication().invokeAndWait {

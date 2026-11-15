@@ -43,30 +43,44 @@ object JpmProjectSetup {
     private const val MODULES_KEY = "dev.jpm.intellij.modules"
 
     /** Must run on the EDT. */
-    fun apply(project: Project, info: JpmProjectInfo) {
-        WriteAction.run<RuntimeException> { applyInWriteAction(project, info) }
+    fun apply(project: Project, info: JpmProjectInfo) = apply(project, listOf(info))
+
+    /** Applies several jpm projects found in one IntelliJ project (nested folders). Must run on the EDT. */
+    fun apply(project: Project, infos: List<JpmProjectInfo>) {
+        WriteAction.run<RuntimeException> { applyInWriteAction(project, infos) }
     }
 
-    private fun applyInWriteAction(project: Project, info: JpmProjectInfo) {
-        val projectDir = Path.of(info.projectDir)
+    private fun applyInWriteAction(project: Project, infos: List<JpmProjectInfo>) {
+        val ideaDir = project.basePath?.let { Path.of(it) } ?: Path.of(infos.first().projectDir)
         val sdks = HashMap<String, Sdk>()
         fun sdkFor(m: JpmModuleInfo): Sdk? = m.javaHome?.let { home -> sdks.getOrPut(home) { findOrCreateSdk(home, m.java) } }
 
         // Project JDK and language level: those of the first module (jpm builds every module with its own).
-        info.modules.firstOrNull()?.let { first ->
+        infos.firstOrNull()?.modules?.firstOrNull()?.let { first ->
             sdkFor(first)?.let { ProjectRootManager.getInstance(project).projectSdk = it }
             languageLevel(first.release)?.let { LanguageLevelProjectExtension.getInstance(project).languageLevel = it }
         }
-        ProjectRootManager.getInstance(project).projectSdk?.let { sdks.putIfAbsent(it.homePath ?: "", it) }
 
-        val libraries = updateLibraries(project, info)
+        val libraries = updateLibraries(project, infos)
+
+        // IntelliJ module names: jpm's, and for a name another project already uses, prefixed with its project.
+        val wanted = LinkedHashMap<String, Path>()
+        val names = infos.map { HashMap<String, String>() }
+        fun claim(i: Int, jpmName: String, dir: Path) {
+            var name = jpmName
+            if (name in wanted) name = "${infos[i].name}.$jpmName"
+            var n = 2
+            while (name in wanted) name = "${infos[i].name}.$jpmName${n++}"
+            wanted[name] = dir
+            names[i][jpmName] = name
+        }
+        infos.forEachIndexed { i, info ->
+            if (info.workspace) claim(i, info.name, Path.of(info.projectDir))
+            for (m in info.modules) claim(i, m.name, Path.of(m.dir))
+        }
 
         val moduleModel = ModuleManager.getInstance(project).getModifiableModel()
         val previous = PropertiesComponent.getInstance(project).getList(MODULES_KEY).orEmpty().toSet()
-        val wanted = LinkedHashMap<String, Path>()
-        if (info.workspace) wanted[info.name] = projectDir
-        for (m in info.modules) wanted[m.name] = Path.of(m.dir)
-
         // Modules jpm made earlier that are gone, and modules IntelliJ made for these folders on its own.
         for (module in moduleModel.modules.toList()) {
             val name = module.name
@@ -77,22 +91,27 @@ object JpmProjectSetup {
         }
 
         val modules = LinkedHashMap<String, Module>()
-        for ((name, dir) in wanted) modules[name] = moduleModel.findModuleByName(name) ?: newModule(moduleModel, projectDir, name)
+        for (name in wanted.keys) modules[name] = moduleModel.findModuleByName(name) ?: newModule(moduleModel, ideaDir, name)
 
         val rootModels = ArrayList<ModifiableRootModel>()
-        if (info.workspace) {
-            val root = ModuleRootManager.getInstance(modules.getValue(info.name)).modifiableModel
-            root.clear()
-            val entry = root.addContentEntry(url(projectDir))
-            val keep = info.modules.mapNotNull { it.generatedSourceDir?.let(Path::of) }
-            for (ex in listOf(projectDir.resolve(".cache"), projectDir.resolve("dist"))) exclude(entry, ex, keep)
-            info.modules.firstOrNull()?.let { sdkFor(it) }?.let { root.sdk = it } ?: root.inheritSdk()
-            rootModels.add(root)
-        }
-        for (m in info.modules) {
-            val model = ModuleRootManager.getInstance(modules.getValue(m.name)).modifiableModel
-            configureModule(model, m, sdkFor(m), modules, libraries, projectDir)
-            rootModels.add(model)
+        infos.forEachIndexed { i, info ->
+            val projectDir = Path.of(info.projectDir)
+            if (info.workspace) {
+                val root = ModuleRootManager.getInstance(modules.getValue(names[i].getValue(info.name))).modifiableModel
+                root.clear()
+                val entry = root.addContentEntry(url(projectDir))
+                val keep = info.modules.mapNotNull { it.generatedSourceDir?.let(Path::of) }
+                for (ex in listOf(projectDir.resolve(".cache"), projectDir.resolve("dist"))) exclude(entry, ex, keep)
+                info.modules.firstOrNull()?.let { sdkFor(it) }?.let { root.sdk = it } ?: root.inheritSdk()
+                rootModels.add(root)
+            }
+            // Workspace dependencies refer to modules of the same jpm project.
+            val own = names[i].mapValues { (_, ideaName) -> modules.getValue(ideaName) }
+            for (m in info.modules) {
+                val model = ModuleRootManager.getInstance(modules.getValue(names[i].getValue(m.name))).modifiableModel
+                configureModule(model, m, sdkFor(m), own, libraries, projectDir)
+                rootModels.add(model)
+            }
         }
         ModifiableModelCommitter.multiCommit(rootModels.toTypedArray(), moduleModel)
         PropertiesComponent.getInstance(project).setList(MODULES_KEY, wanted.keys.toList())
@@ -175,11 +194,11 @@ object JpmProjectSetup {
     }
 
     /** One project library per resolved package, named "jpm: group:artifact:version". */
-    private fun updateLibraries(project: Project, info: JpmProjectInfo): Map<String, Library> {
+    private fun updateLibraries(project: Project, infos: List<JpmProjectInfo>): Map<String, Library> {
         val table: LibraryTable = LibraryTablesRegistrar.getInstance().getLibraryTable(project)
         val tableModel = table.modifiableModel
         val wanted = LinkedHashMap<String, JpmIdeDependency>()
-        for (m in info.modules) for (d in m.ideDependencies.orEmpty()) if (d.module == null) wanted.putIfAbsent(libraryName(d), d)
+        for (info in infos) for (m in info.modules) for (d in m.ideDependencies.orEmpty()) if (d.module == null) wanted.putIfAbsent(libraryName(d), d)
         for (lib in tableModel.libraries.toList()) {
             val name = lib.name ?: continue
             if (name.startsWith(LIBRARY_PREFIX) && name !in wanted) tableModel.removeLibrary(lib)

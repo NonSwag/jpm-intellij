@@ -78,7 +78,7 @@ class JpmRunConfiguration(project: Project, factory: ConfigurationFactory, name:
             options.arguments = value
         }
 
-    /** Empty runs in the project's folder. */
+    /** Empty runs in the (first) jpm project's folder. */
     var workingDirectory: String
         get() = options.workingDirectory ?: ""
         set(value) {
@@ -89,7 +89,8 @@ class JpmRunConfiguration(project: Project, factory: ConfigurationFactory, name:
 
     override fun getState(executor: Executor, environment: ExecutionEnvironment): RunProfileState {
         val dir = workingDirectory.takeIf { it.isNotBlank() }?.let { Path.of(it) }
-            ?: Jpm.baseDir(project) ?: throw ExecutionException("The project has no folder")
+            ?: JpmSync.get(project).roots().firstOrNull() ?: Jpm.baseDir(project)
+            ?: throw ExecutionException("The project has no folder")
         val args = ParametersListUtil.parse(arguments)
         return object : CommandLineState(environment) {
             override fun startProcess(): ProcessHandler {
@@ -114,7 +115,7 @@ class JpmRunConfiguration(project: Project, factory: ConfigurationFactory, name:
             add(dir.resolve(Jpm.MANIFEST))
             add(dir.resolve(Jpm.LOCKFILE))
             add(dir.resolve("dist"))
-            JpmSync.get(project).info?.modules?.forEach {
+            JpmSync.get(project).infos.orEmpty().flatMap { it.modules }.forEach {
                 add(Path.of(it.dir).resolve(Jpm.MANIFEST))
                 add(Path.of(it.dir).resolve("dist"))
             }

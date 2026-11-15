@@ -7,13 +7,17 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
+import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 
 /** Loads jpm projects when they open, and offers to migrate Maven and Gradle projects. */
 class JpmStartup : ProjectActivity {
     override suspend fun execute(project: Project) {
         val dir = Jpm.baseDir(project) ?: return
-        if (Jpm.isJpmProject(dir)) {
+        if (JpmSync.get(project).roots().isNotEmpty()) {
             JpmSync.get(project).reload()
             return
         }
@@ -40,10 +44,20 @@ class JpmStartup : ProjectActivity {
 class JpmFileListener(private val project: Project) : BulkFileListener {
     override fun after(events: List<VFileEvent>) {
         val base = project.basePath ?: return
-        val relevant = events.any { e ->
+        val sync = JpmSync.get(project)
+        var relevant = false
+        for (e in events) {
+            if (!e.path.startsWith(base)) continue
             val name = e.path.substringAfterLast('/')
-            (name == Jpm.MANIFEST || name == Jpm.LOCKFILE) && e.path.startsWith(base)
+            val isDir = e.file?.isDirectory == true
+            // A project.jsonc (or a folder that may hold one) appearing, going or moving changes which projects there are.
+            if ((name == Jpm.MANIFEST || isDir) && (e is VFileCreateEvent || e is VFileDeleteEvent || e is VFileMoveEvent ||
+                    (e is VFilePropertyChangeEvent && e.propertyName == com.intellij.openapi.vfs.VirtualFile.PROP_NAME))) {
+                sync.rootsChanged()
+                relevant = true
+            }
+            if (name == Jpm.MANIFEST || name == Jpm.LOCKFILE) relevant = true
         }
-        if (relevant) JpmSync.get(project).scheduleReload()
+        if (relevant) sync.scheduleReload()
     }
 }

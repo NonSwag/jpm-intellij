@@ -50,7 +50,36 @@ object Jpm {
 
     fun baseDir(project: Project): Path? = project.basePath?.let { Path.of(it) }
 
-    fun isJpmProject(project: Project): Boolean = baseDir(project)?.let { isJpmProject(it) } ?: false
+    /** Whether the project has jpm projects: in its folder, or in folders below it. */
+    fun isJpmProject(project: Project): Boolean = JpmSync.get(project).roots().isNotEmpty()
+
+    /** Folders that are never searched for jpm projects: build output, dependencies, VCS and IDE data. */
+    private val skipped = setOf("node_modules", "build", "dist", "target", "out", "bin")
+
+    /**
+     * The jpm projects in [base]: [base] itself if it has a project.jsonc, otherwise every folder below it
+     * that has one, down to [maxDepth] levels. A project's own folders are not searched further, since a
+     * workspace finds its modules itself; hidden folders and build output are skipped.
+     */
+    fun findRoots(base: Path, maxDepth: Int = 4): List<Path> {
+        if (isJpmProject(base)) return listOf(base)
+        val out = ArrayList<Path>()
+        fun walk(dir: Path, depth: Int) {
+            if (depth > maxDepth) return
+            val children = try {
+                Files.newDirectoryStream(dir).use { s -> s.filter { Files.isDirectory(it) && !Files.isSymbolicLink(it) }.sorted() }
+            } catch (e: java.io.IOException) {
+                return
+            }
+            for (c in children) {
+                val name = c.fileName.toString()
+                if (name.startsWith(".") || name in skipped) continue
+                if (isJpmProject(c)) out.add(c) else walk(c, depth + 1)
+            }
+        }
+        walk(base, 1)
+        return out
+    }
 
     fun isJpmProject(dir: Path): Boolean = Files.isRegularFile(dir.resolve(MANIFEST))
 

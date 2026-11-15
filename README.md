@@ -15,6 +15,13 @@ up: open a folder with a `project.jsonc` and it is ready to code in, with nothin
 - **JDK, automatically.** Each module gets the JDK jpm builds it with, registered in IntelliJ when it is not
   yet, and its language level from `"target"`. A JDK the project asks for that is not installed is
   installed by jpm, as on the command line.
+- **Editing `project.jsonc`.** Completion, documentation and validation from jpm's JSON Schema, bundled
+  with the plugin so it works offline and without a `"$schema"` line: unknown fields, wrong dependency
+  keys, misspelled options and invalid values are underlined as you type.
+- **Nested projects.** A folder that is not a jpm project itself but has jpm projects in folders below it
+  (a monorepo, a backend next to a frontend) loads all of them. Each gets its own section in the tool
+  window, and its commands run in its folder. Folders inside a jpm project are its own business (a
+  workspace finds its modules itself), and hidden folders and build output are not searched.
 - **Automatic reload.** Changes to `project.jsonc` or `project.lock` (from the editor, `jpm add`, a `git
   pull`) reload the project, and IntelliJ indexes what changed. **Tools | Reload jpm Project** reloads by
   hand.
@@ -52,6 +59,12 @@ The plugin runs `jpm info --json --ide` in the project folder and applies what i
 source of truth: the plugin never reads `project.jsonc` itself, so it understands every manifest jpm does.
 IntelliJ's own build (Build | Build Project, running classes and tests from the gutter, debugging) works on
 the configured modules and writes to `.cache/idea/`, apart from jpm's output.
+
+## The schema
+
+`src/main/resources/schemas/project.schema.json` is a copy of jpm's
+[`schema/project.schema.json`](https://github.com/NonSwag/jpm/blob/main/schema/project.schema.json). CI
+warns when it differs from the schema of jpm's latest release; copy it over when jpm's changes.
 
 ## Building
 

@@ -22,6 +22,7 @@ dependencies {
     intellijPlatform {
         intellijIdea("2026.1.5.1")
         bundledPlugin("com.intellij.java")
+        bundledPlugin("com.intellij.modules.json")
         testFramework(TestFrameworkType.Platform)
     }
     testImplementation("junit:junit:4.13.2")

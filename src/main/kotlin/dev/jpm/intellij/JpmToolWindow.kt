@@ -34,7 +34,7 @@ import javax.swing.tree.TreeSelectionModel
 class JpmToolWindowFactory : ToolWindowFactory, DumbAware {
     override suspend fun isApplicableAsync(project: Project): Boolean {
         val dir = Jpm.baseDir(project) ?: return false
-        return Jpm.isJpmProject(dir) || Jpm.importableBuild(dir) != null
+        return JpmSync.get(project).roots().isNotEmpty() || Jpm.importableBuild(dir) != null
     }
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -51,6 +51,7 @@ private sealed class Item(val label: String, val icon: Icon?) {
     class Command(label: String, val args: List<String>, val hint: String? = null, val dir: Path? = null) :
         Item(label, AllIcons.Nodes.ConfigFolder)
     class ModuleNode(label: String, val version: String?) : Item(label, AllIcons.Nodes.Module)
+    class ProjectNode(label: String, val path: String) : Item(label, JpmIcons.Jpm)
     class Dependency(label: String, val version: String?, val scope: String?) : Item(label, AllIcons.Nodes.PpLib)
     class Message(label: String) : Item(label, null)
 }
@@ -119,10 +120,10 @@ private class JpmToolWindowPanel(private val project: Project) : SimpleToolWindo
     private fun rebuild() {
         root.removeAllChildren()
         val sync = JpmSync.get(project)
-        val info = sync.info
+        val infos = sync.infos
         val dir = Jpm.baseDir(project)
         when {
-            dir != null && !Jpm.isJpmProject(dir) -> {
+            dir != null && sync.roots().isEmpty() -> {
                 val build = Jpm.importableBuild(dir)
                 tree.emptyText.clear()
                 tree.emptyText.appendLine("No jpm project here")
@@ -132,7 +133,7 @@ private class JpmToolWindowPanel(private val project: Project) : SimpleToolWindo
                     }
                 }
             }
-            info == null -> {
+            infos == null -> {
                 tree.emptyText.clear()
                 val err = sync.error
                 when {
@@ -150,46 +151,60 @@ private class JpmToolWindowPanel(private val project: Project) : SimpleToolWindo
                     else -> tree.emptyText.appendLine("Not loaded yet")
                 }
             }
-            else -> fill(info, sync.error)
+            else -> {
+                sync.error?.let { root.add(DefaultMutableTreeNode(Item.Message("Last reload failed: " + it.lineSequence().first()))) }
+                if (infos.size == 1) {
+                    fill(infos[0], root)
+                } else {
+                    // Several jpm projects in nested folders: one section each, its commands run in its folder.
+                    for (info in infos) {
+                        val node = DefaultMutableTreeNode(Item.ProjectNode(info.name, sync.relative(Path.of(info.projectDir))))
+                        root.add(node)
+                        fill(info, node)
+                    }
+                }
+            }
         }
         model.reload()
-        if (info != null) TreeUtil.expand(tree, 2)
+        if (infos != null) TreeUtil.expand(tree, if (infos.size == 1) 2 else 3)
     }
 
-    private fun fill(info: JpmProjectInfo, error: String?) {
-        fun node(item: Item, parent: DefaultMutableTreeNode = root) = DefaultMutableTreeNode(item).also { parent.add(it) }
-        if (error != null) node(Item.Message("Last reload failed: " + error.lineSequence().first()))
+    private fun fill(info: JpmProjectInfo, top: DefaultMutableTreeNode) {
+        val projectDir = Path.of(info.projectDir)
+        fun node(item: Item, parent: DefaultMutableTreeNode = top) = DefaultMutableTreeNode(item).also { parent.add(it) }
+        fun cmd(label: String, args: List<String>, hint: String?, parent: DefaultMutableTreeNode) =
+            node(Item.Command(label, args, hint, projectDir), parent)
 
         val lifecycle = node(Item.Group("Lifecycle"))
-        node(Item.Command("build", listOf("build"), "compile and package the jars"), lifecycle)
-        node(Item.Command("test", listOf("test"), "run the tests"), lifecycle)
+        cmd("build", listOf("build"), "compile and package the jars", lifecycle)
+        cmd("test", listOf("test"), "run the tests", lifecycle)
         val entries = info.modules.flatMap { it.main.orEmpty().keys }.distinct()
         if (entries.isEmpty() || entries == listOf("main")) {
-            node(Item.Command("start", listOf("start"), "run main"), lifecycle)
+            cmd("start", listOf("start"), "run main", lifecycle)
         } else {
-            for (e in entries) node(Item.Command("start $e", listOf("start", e), "run $e"), lifecycle)
+            for (e in entries) cmd("start $e", listOf("start", e), "run $e", lifecycle)
         }
-        node(Item.Command("dev", listOf("dev"), "run and restart on changes"), lifecycle)
-        node(Item.Command("clean", listOf("clean"), "remove build output"), lifecycle)
+        cmd("dev", listOf("dev"), "run and restart on changes", lifecycle)
+        cmd("clean", listOf("clean"), "remove build output", lifecycle)
 
         val build = node(Item.Group("Build"))
-        node(Item.Command("build --release", listOf("build", "--release"), "with the release profile"), build)
-        node(Item.Command("build --bundle", listOf("build", "--bundle"), "one runnable jar with its dependencies"), build)
-        node(Item.Command("build --native", listOf("build", "--native"), "GraalVM native executable"), build)
+        cmd("build --release", listOf("build", "--release"), "with the release profile", build)
+        cmd("build --bundle", listOf("build", "--bundle"), "one runnable jar with its dependencies", build)
+        cmd("build --native", listOf("build", "--native"), "GraalVM native executable", build)
 
         val deps = node(Item.Group("Dependencies"))
-        node(Item.Command("install", listOf("install"), "resolve and download"), deps)
-        node(Item.Command("update", listOf("update"), "newest versions within the ranges"), deps)
-        node(Item.Command("outdated", listOf("outdated"), "show newer versions"), deps)
+        cmd("install", listOf("install"), "resolve and download", deps)
+        cmd("update", listOf("update"), "newest versions within the ranges", deps)
+        cmd("outdated", listOf("outdated"), "show newer versions", deps)
 
         val publishing = node(Item.Group("Publishing"))
-        node(Item.Command("publish", listOf("publish"), "needs the jpm-publish extension"), publishing)
-        node(Item.Command("publish --local", listOf("publish", "--local"), "to ~/.m2/repository"), publishing)
+        cmd("publish", listOf("publish"), "needs the jpm-publish extension", publishing)
+        cmd("publish --local", listOf("publish", "--local"), "to ~/.m2/repository", publishing)
 
         val scripts = (info.scripts.orEmpty() + info.modules.flatMap { it.scripts.orEmpty() }).distinct()
         if (scripts.isNotEmpty()) {
             val group = node(Item.Group("Scripts"))
-            for (s in scripts) node(Item.Command(s, listOf("run", s), "jpm run $s"), group)
+            for (s in scripts) cmd(s, listOf("run", s), "jpm run $s", group)
         }
 
         val modules = node(Item.Group(if (info.workspace) "Modules" else "Project", AllIcons.Nodes.ModuleGroup))
@@ -223,6 +238,11 @@ private class JpmToolWindowPanel(private val project: Project) : SimpleToolWindo
                     icon = AllIcons.Actions.Execute
                     append(item.label)
                     item.hint?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
+                }
+                is Item.ProjectNode -> {
+                    icon = item.icon
+                    append(item.label, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+                    append("  ${item.path}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 }
                 is Item.ModuleNode -> {
                     icon = item.icon
