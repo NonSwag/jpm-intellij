@@ -27,10 +27,13 @@ up: open a folder with a `project.jsonc` and it is ready to code in, with nothin
 - **Automatic reload.** Changes to `project.jsonc` or `project.lock` (from the editor, `jpm add`, a `git
   pull`) reload the project, and IntelliJ indexes what changed. **Tools | Reload jpm Project** reloads by
   hand.
-- **A jpm tool window** on the right, like Gradle's and Maven's: build, test, start (one per entry point),
-  dev, clean, release/bundle/native builds, install, update, outdated, publish, your scripts, and each
-  module's dependencies. Double-click to run; output goes to the Run window, where the command can be
-  rerun or stopped. Commands can also be saved as **jpm** run configurations.
+- **A jpm tool window** on the right, like Gradle's and Maven's, with the commands that can actually run:
+  build, clean, release builds and the dependency commands always; test when there are tests; start and
+  dev (one per entry point) and bundle and native builds when there is a `main`; publish when
+  `extensions.publish` names repositories (one per repository), and `publish --local` always; and your
+  scripts. In a workspace each module also gets its own tasks, run in its folder so jpm acts on that module
+  only, next to its dependencies. Double-click to run; output goes to the Run window, where the command can
+  be rerun or stopped. Commands can also be saved as **jpm** run configurations.
 - **Maven and Gradle migration.** Opening a Maven or Gradle project offers to move it to jpm (also
   **Tools | Migrate to jpm…**): it shows what `jpm import --dry-run` would write and what does not carry
   over, then runs `jpm import`. The Maven or Gradle files are not touched. See

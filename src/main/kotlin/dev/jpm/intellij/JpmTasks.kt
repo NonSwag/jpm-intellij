@@ -1,0 +1,107 @@
+package dev.jpm.intellij
+
+import java.nio.file.Path
+
+/** A jpm command offered in the tool window: `jpm <args>` run in [dir]. */
+data class JpmTask(val label: String, val args: List<String>, val hint: String?, val dir: Path)
+
+data class JpmTaskGroup(val name: String, val tasks: List<JpmTask>)
+
+/**
+ * The commands that can actually run for a project or module: no test task without tests, no start, dev,
+ * bundle or native build without a main, and publishing to repositories only when they are configured
+ * ("publish --local" needs none).
+ */
+object JpmTasks {
+    /** The tasks of a whole jpm project (in a workspace: of every module, run from its root). */
+    fun forProject(info: JpmProjectInfo): List<JpmTaskGroup> {
+        val dir = Path.of(info.projectDir)
+        val groups = ArrayList<JpmTaskGroup>()
+
+        val lifecycle = ArrayList<JpmTask>()
+        lifecycle.add(JpmTask("build", listOf("build"), "compile and package the jars", dir))
+        if (info.modules.any { it.hasTests }) lifecycle.add(JpmTask("test", listOf("test"), "run the tests", dir))
+        // `jpm start` from the root needs one module to run: the project's, or the only one with a main
+        val runnable = info.modules.filter { !it.main.isNullOrEmpty() }
+        if (runnable.size == 1) lifecycle.addAll(runTasks(runnable[0], Path.of(runnable[0].dir)))
+        lifecycle.add(JpmTask("clean", listOf("clean"), "remove build output", dir))
+        groups.add(JpmTaskGroup("Lifecycle", lifecycle))
+
+        val build = ArrayList<JpmTask>()
+        build.add(JpmTask("build --release", listOf("build", "--release"), "with the release profile", dir))
+        if (runnable.isNotEmpty()) {
+            build.add(JpmTask("build --bundle", listOf("build", "--bundle"), "one runnable jar with its dependencies", dir))
+            build.add(JpmTask("build --native", listOf("build", "--native"), "GraalVM native executable", dir))
+        }
+        groups.add(JpmTaskGroup("Build", build))
+
+        groups.add(JpmTaskGroup("Dependencies", listOf(
+            JpmTask("install", listOf("install"), "resolve and download", dir),
+            JpmTask("update", listOf("update"), "newest versions within the ranges", dir),
+            JpmTask("outdated", listOf("outdated"), "show newer versions", dir),
+        )))
+
+        val repos = (repositories(info.extensions) + info.modules.flatMap { repositories(it.extensions) }).distinct()
+        groups.add(JpmTaskGroup("Publishing", publishTasks(repos, null, dir)))
+
+        val scripts = if (info.workspace) info.scripts.orEmpty() else (info.scripts.orEmpty() + info.modules.flatMap { it.scripts.orEmpty() }).distinct()
+        if (scripts.isNotEmpty()) groups.add(JpmTaskGroup("Scripts", scripts.map { JpmTask(it, listOf("run", it), "jpm run $it", dir) }))
+        return groups
+    }
+
+    /** The tasks of one workspace module, run in its folder (jpm then acts on that module only). */
+    fun forModule(info: JpmProjectInfo, m: JpmModuleInfo): List<JpmTask> {
+        val dir = Path.of(m.dir)
+        val out = ArrayList<JpmTask>()
+        out.add(JpmTask("build", listOf("build"), null, dir))
+        if (m.hasTests) out.add(JpmTask("test", listOf("test"), null, dir))
+        if (!m.main.isNullOrEmpty()) {
+            out.addAll(runTasks(m, dir))
+            out.add(JpmTask("build --bundle", listOf("build", "--bundle"), null, dir))
+            out.add(JpmTask("build --native", listOf("build", "--native"), null, dir))
+        }
+        val skip = (m.extensions?.get("publish") as? Map<*, *>)?.get("skip") == true
+        if (!skip) {
+            val repos = (repositories(info.extensions) + repositories(m.extensions)).distinct()
+            out.addAll(publishTasks(repos, m.name, Path.of(info.projectDir)))
+        }
+        for (s in m.scripts.orEmpty()) out.add(JpmTask("run $s", listOf("run", s), null, dir))
+        return out
+    }
+
+    private fun runTasks(m: JpmModuleInfo, dir: Path): List<JpmTask> {
+        val entries = m.main.orEmpty()
+        val out = ArrayList<JpmTask>()
+        if (entries.keys == setOf("main")) {
+            out.add(JpmTask("start", listOf("start"), entries["main"], dir))
+            out.add(JpmTask("dev", listOf("dev"), "run and restart on changes", dir))
+        } else {
+            for ((e, cls) in entries) {
+                val args = if (e == "main") emptyList() else listOf(e)
+                out.add(JpmTask("start" + (if (e == "main") "" else " $e"), listOf("start") + args, cls, dir))
+                out.add(JpmTask("dev" + (if (e == "main") "" else " $e"), listOf("dev") + args, "run $e and restart on changes", dir))
+            }
+        }
+        return out
+    }
+
+    /** `jpm publish` with one repository, `jpm publish <name>` with several, and always --local. */
+    private fun publishTasks(repos: List<String>, module: String?, dir: Path): List<JpmTask> {
+        val only = if (module == null) emptyList() else listOf("--module", module)
+        val out = ArrayList<JpmTask>()
+        when (repos.size) {
+            0 -> {}
+            1 -> out.add(JpmTask("publish", listOf("publish") + only, "to ${repos[0]}", dir))
+            else -> repos.forEach { r -> out.add(JpmTask("publish $r", listOf("publish", r) + only, null, dir)) }
+        }
+        out.add(JpmTask("publish --local", listOf("publish", "--local") + only, "to ~/.m2/repository", dir))
+        return out
+    }
+
+    /** The repository names of a "publish" extension configuration. */
+    private fun repositories(extensions: Map<String, Any?>?): List<String> {
+        val publish = extensions?.get("publish") as? Map<*, *> ?: return emptyList()
+        val repos = publish["repositories"] as? Map<*, *> ?: return emptyList()
+        return repos.keys.map { it.toString() }
+    }
+}

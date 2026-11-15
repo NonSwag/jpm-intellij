@@ -93,7 +93,7 @@ class JpmSync(private val project: Project) : Disposable {
                     if (out.exitCode != 0) {
                         throw LoadException(out.stderr.ifBlank { out.stdout }.trim().lines().filterNot { it.startsWith("Picked up ") }.joinToString("\n"))
                     }
-                    JpmProjectInfo.parse(out.stdout)
+                    JpmProjectInfo.parse(out.stdout).also { info -> info.modules.forEach { it.hasTests = hasTestSources(it) } }
                 }
                 val parsed = loaded.infos
                 if (parsed.isEmpty() && loaded.failures.isNotEmpty()) {
@@ -186,6 +186,8 @@ class JpmSync(private val project: Project) : Disposable {
 
     class LoadException(message: String) : RuntimeException(message)
 
+
+
     class Loaded(val infos: List<JpmProjectInfo>, val byRoot: Map<Path, JpmProjectInfo>, val failures: List<String>)
 
     /**
@@ -245,5 +247,17 @@ class JpmSync(private val project: Project) : Disposable {
         val TOPIC: Topic<Listener> = Topic.create("jpm project", Listener::class.java)
 
         fun get(project: Project): JpmSync = project.service()
+
+        /** True if the module has .java files in its test folder (outside its test resources). */
+        fun hasTestSources(m: JpmModuleInfo): Boolean {
+            val dir = m.testDir?.let { Path.of(it) } ?: return false
+            if (!Files.isDirectory(dir)) return false
+            val resources = m.testResourceDir?.let { Path.of(it) }
+            return try {
+                Files.walk(dir).use { s -> s.anyMatch { it.toString().endsWith(".java") && (resources == null || !it.startsWith(resources)) && Files.isRegularFile(it) } }
+            } catch (e: java.io.IOException) {
+                false
+            }
+        }
     }
 }

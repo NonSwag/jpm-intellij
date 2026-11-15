@@ -11,6 +11,8 @@ class JpmProjectInfo {
     var version: String? = null
     var workspace: Boolean = false
     var scripts: List<String>? = null
+    /** Settings of jpm extensions by name, as in the root project.jsonc (e.g. "publish"). */
+    var extensions: Map<String, Any?>? = null
     var modules: List<JpmModuleInfo> = emptyList()
 
     companion object {
@@ -44,6 +46,11 @@ class JpmModuleInfo {
     var release: Int? = null
     var dependencies: List<JpmDependencyInfo>? = null
     var ideDependencies: List<JpmIdeDependency>? = null
+    var extensions: Map<String, Any?>? = null
+
+    /** Whether the module has test sources; worked out by the plugin after loading, not reported by jpm. */
+    @Transient
+    var hasTests: Boolean = false
 }
 
 /** A dependency as declared in project.jsonc. */

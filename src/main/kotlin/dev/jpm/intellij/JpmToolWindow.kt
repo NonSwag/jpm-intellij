@@ -170,58 +170,33 @@ private class JpmToolWindowPanel(private val project: Project) : SimpleToolWindo
     }
 
     private fun fill(info: JpmProjectInfo, top: DefaultMutableTreeNode) {
-        val projectDir = Path.of(info.projectDir)
         fun node(item: Item, parent: DefaultMutableTreeNode = top) = DefaultMutableTreeNode(item).also { parent.add(it) }
-        fun cmd(label: String, args: List<String>, hint: String?, parent: DefaultMutableTreeNode) =
-            node(Item.Command(label, args, hint, projectDir), parent)
+        fun task(t: JpmTask, parent: DefaultMutableTreeNode) = node(Item.Command(t.label, t.args, t.hint, t.dir), parent)
 
-        val lifecycle = node(Item.Group("Lifecycle"))
-        cmd("build", listOf("build"), "compile and package the jars", lifecycle)
-        cmd("test", listOf("test"), "run the tests", lifecycle)
-        val entries = info.modules.flatMap { it.main.orEmpty().keys }.distinct()
-        if (entries.isEmpty() || entries == listOf("main")) {
-            cmd("start", listOf("start"), "run main", lifecycle)
-        } else {
-            for (e in entries) cmd("start $e", listOf("start", e), "run $e", lifecycle)
-        }
-        cmd("dev", listOf("dev"), "run and restart on changes", lifecycle)
-        cmd("clean", listOf("clean"), "remove build output", lifecycle)
-
-        val build = node(Item.Group("Build"))
-        cmd("build --release", listOf("build", "--release"), "with the release profile", build)
-        cmd("build --bundle", listOf("build", "--bundle"), "one runnable jar with its dependencies", build)
-        cmd("build --native", listOf("build", "--native"), "GraalVM native executable", build)
-
-        val deps = node(Item.Group("Dependencies"))
-        cmd("install", listOf("install"), "resolve and download", deps)
-        cmd("update", listOf("update"), "newest versions within the ranges", deps)
-        cmd("outdated", listOf("outdated"), "show newer versions", deps)
-
-        val publishing = node(Item.Group("Publishing"))
-        cmd("publish", listOf("publish"), "needs the jpm-publish extension", publishing)
-        cmd("publish --local", listOf("publish", "--local"), "to ~/.m2/repository", publishing)
-
-        val scripts = (info.scripts.orEmpty() + info.modules.flatMap { it.scripts.orEmpty() }).distinct()
-        if (scripts.isNotEmpty()) {
-            val group = node(Item.Group("Scripts"))
-            for (s in scripts) cmd(s, listOf("run", s), "jpm run $s", group)
+        // only what can run: no test without tests, no start or dev without a main, no publish without repositories
+        for (group in JpmTasks.forProject(info)) {
+            if (group.tasks.isEmpty()) continue
+            val g = node(Item.Group(group.name))
+            for (t in group.tasks) task(t, g)
         }
 
         val modules = node(Item.Group(if (info.workspace) "Modules" else "Project", AllIcons.Nodes.ModuleGroup))
         for (m in info.modules) {
             val mod = node(Item.ModuleNode(m.name, m.version), modules)
+            if (info.workspace) {
+                // a module's own tasks run in its folder, so jpm acts on that module only
+                val tasks = JpmTasks.forModule(info, m)
+                if (tasks.isNotEmpty()) {
+                    val g = node(Item.Group("Tasks"), mod)
+                    for (t in tasks) task(t, g)
+                }
+            }
             val declared = m.dependencies.orEmpty()
             for (scope in listOf("runtime", "dev", "test")) {
                 val inScope = declared.filter { (it.scope ?: "runtime") == scope }
                 if (inScope.isEmpty()) continue
                 val g = node(Item.Group(scope, AllIcons.Nodes.Folder), mod)
                 for (d in inScope) node(Item.Dependency(d.key, d.resolved ?: d.spec, null), g)
-            }
-            if (info.workspace) {
-                for (e in m.main.orEmpty().keys) {
-                    node(Item.Command("start " + (if (e == "main") "" else e).ifEmpty { "(main)" },
-                        if (e == "main") listOf("start") else listOf("start", e), m.main?.get(e), Path.of(m.dir)), mod)
-                }
             }
         }
     }
