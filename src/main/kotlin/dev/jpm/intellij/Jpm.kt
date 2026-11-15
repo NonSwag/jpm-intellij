@@ -95,7 +95,7 @@ fun notificationText(output: String): String =
     com.intellij.openapi.util.text.StringUtil.escapeXmlEntities(output.trim()).replace("\n", "<br>")
 
 class JpmNotFoundException : RuntimeException(
-    "jpm is not installed. Install it with: curl -fsSL https://github.com/NonSwag/jpm/releases/latest/download/install.sh | sh " +
-        "(Windows: irm https://github.com/NonSwag/jpm/releases/latest/download/install.ps1 | iex), " +
+    "jpm is not installed. Install it with: curl -fsSL https://github.com/java-package-manager/jpm/releases/latest/download/install.sh | sh " +
+        "(Windows: irm https://github.com/java-package-manager/jpm/releases/latest/download/install.ps1 | iex), " +
         "or set its path in Settings | Build, Execution, Deployment | Build Tools | jpm."
 )

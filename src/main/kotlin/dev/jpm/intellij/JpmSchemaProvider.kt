@@ -17,7 +17,7 @@ class JpmSchemaProviderFactory : JsonSchemaProviderFactory, DumbAware {
 }
 
 object JpmSchemaProvider : JsonSchemaFileProvider {
-    const val SCHEMA_URL = "https://github.com/NonSwag/jpm/releases/latest/download/project.schema.json"
+    const val SCHEMA_URL = "https://github.com/java-package-manager/jpm/releases/latest/download/project.schema.json"
     private const val RESOURCE = "/schemas/project.schema.json"
 
     override fun isAvailable(file: VirtualFile): Boolean = file.name == Jpm.MANIFEST

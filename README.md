@@ -1,6 +1,6 @@
 # jpm for IntelliJ IDEA
 
-Opens [jpm](https://github.com/NonSwag/jpm) projects in IntelliJ IDEA (2026.1 and newer) and keeps them set
+Opens [jpm](https://github.com/java-package-manager/jpm) projects in IntelliJ IDEA (2026.1 and newer) and keeps them set
 up: open a folder with a `project.jsonc` and it is ready to code in, with nothing to configure.
 
 ## What it does
@@ -34,7 +34,7 @@ up: open a folder with a `project.jsonc` and it is ready to code in, with nothin
 - **Maven and Gradle migration.** Opening a Maven or Gradle project offers to move it to jpm (also
   **Tools | Migrate to jpm…**): it shows what `jpm import --dry-run` would write and what does not carry
   over, then runs `jpm import`. The Maven or Gradle files are not touched. See
-  [MIGRATION.md](https://github.com/NonSwag/jpm/blob/main/MIGRATION.md).
+  [MIGRATION.md](https://github.com/java-package-manager/jpm/blob/main/MIGRATION.md).
 - **New projects.** **File | New | Project | jpm** creates a project with `jpm init`.
 
 ## Installing
@@ -43,7 +43,7 @@ Add the plugin's update site once, and IntelliJ installs it and keeps it up to d
 **Settings | Plugins | ⚙ | Manage Plugin Repositories… | +**, then
 
 ```
-https://github.com/NonSwag/jpm-intellij/releases/latest/download/updatePlugins.xml
+https://github.com/java-package-manager/jpm-intellij/releases/latest/download/updatePlugins.xml
 ```
 
 and search for **jpm** on the Marketplace tab. Each release's zip can also be installed by hand with
@@ -65,7 +65,7 @@ the configured modules and writes to `.cache/idea/`, apart from jpm's output.
 ## The schema
 
 `src/main/resources/schemas/project.schema.json` is a copy of jpm's
-[`schema/project.schema.json`](https://github.com/NonSwag/jpm/blob/main/schema/project.schema.json). CI
+[`schema/project.schema.json`](https://github.com/java-package-manager/jpm/blob/main/schema/project.schema.json). CI
 warns when it differs from the schema of jpm's latest release; copy it over when jpm's changes.
 
 ## Building
