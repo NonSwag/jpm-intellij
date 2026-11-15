@@ -278,12 +278,16 @@
     },
     "versionSpec": {
       "type": "string",
-      "description": "An exact version (1.2.3), an npm-style range (^1.2, ~1.2.3, >=1.0 <2.0), a Maven range ([1.0,2.0)), * for any, a Git tag, branch or commit for Git dependencies, or * for workspace modules.",
+      "description": "A version or range, in Maven, Gradle or npm syntax: exact (1.2.3, =1.2.3, 1.2.3!!), Maven ranges ([1.0,2.0), [1.5,), (,1.0], (,1.0],[1.2,)), Gradle ranges and prefixes (]1.0,2.0[, 1.+, 1.2.+, +), npm ranges (^1.2, ~1.2.3, ~1, >=0.1, >1.0 <=2.0, 1.x, 1.2.*, *, 1.0 - 2.0, ^1 || ^2), the newest of a kind (latest.release, RELEASE, latest.milestone, latest.integration, LATEST) or a strict range with a preferred version ([1.0,2.0)!!1.5). Git dependencies also take a tag, a commit or #branch, and read a bare 1.2 as 1.2.x; workspace modules take *.",
       "examples": [
         "1.2.3",
         "^1.2",
-        "~1.2.3",
-        "[33.0,34.0)",
+        "~1",
+        "1.+",
+        "[1.0,2.0)",
+        ">=0.1",
+        "1.x",
+        "latest.release",
         "*"
       ]
     },
