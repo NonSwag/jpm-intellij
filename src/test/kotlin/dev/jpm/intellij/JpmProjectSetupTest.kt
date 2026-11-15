@@ -113,12 +113,13 @@ class JpmProjectSetupTest : HeavyPlatformTestCase() {
             write("tools/app/src/t/App.java", "package t; public class App {}")
 
             val roots = Jpm.findRoots(base)
-            assertEquals(listOf(base.resolve("backend"), base.resolve("tools")), roots)
-            val infos = roots.map { dir ->
+            assertEquals(listOf(base.resolve("backend"), base.resolve("tools"), base.resolve("tools/app")), roots)
+            val infos = JpmSync.get(project).collectInfos(roots, emptyMap()) { dir ->
                 val out = Jpm.run(dir, listOf("info", "--json", "--ide"), null)
                 assertEquals(out.stderr, 0, out.exitCode)
                 JpmProjectInfo.parse(out.stdout)
-            }
+            }.infos
+            assertEquals(2, infos.size)
             ApplicationManager.getApplication().invokeAndWait { JpmProjectSetup.apply(project, infos) }
 
             val modules = ModuleManager.getInstance(project).modules.associateBy { it.name }
@@ -126,6 +127,80 @@ class JpmProjectSetupTest : HeavyPlatformTestCase() {
             fun sources(name: String) = ModuleRootManager.getInstance(modules.getValue(name)).sourceRootUrls.filter { it.endsWith("/src") }
             assertTrue(sources("app").single().endsWith("backend/src"))
             assertTrue(sources("tools.app").single().endsWith("tools/app/src"))
+        } finally {
+            base.toFile().deleteRecursively()
+        }
+    }
+
+    /** Like the jpm repository: a project at the top, with a workspace among its test fixtures. */
+    fun testLoadsProjectsNestedInsideAProject() {
+        System.getenv("JPM_TEST_EXE")?.let { JpmSettings.get().state.jpmPath = it }
+        if (Jpm.executable() == null) {
+            println("Skipped: no jpm (install it, or set JPM_TEST_EXE)")
+            return
+        }
+        val base = Files.createTempDirectory("jpm-repo")
+        try {
+            fun write(rel: String, text: String) = base.resolve(rel).also { Files.createDirectories(it.parent) }.writeText(text)
+            write("project.jsonc", """{ "name": "tool", "version": "1.0.0", "java": "21" }""")
+            write("src/t/Tool.java", "package t; public class Tool {}")
+            write("fixtures/demo/project.jsonc", """{ "name": "demo", "version": "1.0.0", "workspace": ["api", "app"] }""")
+            write("fixtures/demo/api/project.jsonc", """{ "name": "api", "version": "1.0.0", "java": "21" }""")
+            write("fixtures/demo/api/src/a/Api.java", "package a; public interface Api {}")
+            write("fixtures/demo/app/project.jsonc", """{ "name": "app", "version": "1.0.0", "java": "21", "runtime": { "workspace:api": "*" } }""")
+            write("fixtures/demo/app/src/b/App.java", "package b; public class App implements a.Api {}")
+
+            val roots = Jpm.findRoots(base)
+            assertEquals(4, roots.size)
+            val ran = ArrayList<Path>()
+            val loaded = JpmSync.get(project).collectInfos(roots, emptyMap()) { dir ->
+                ran.add(dir)
+                val out = Jpm.run(dir, listOf("info", "--json", "--ide"), null)
+                assertEquals(out.stderr, 0, out.exitCode)
+                JpmProjectInfo.parse(out.stdout)
+            }
+            // The workspace's modules come with the workspace, so jpm runs twice, not four times.
+            assertEquals(listOf(base, base.resolve("fixtures/demo")), ran)
+            assertEmpty(loaded.failures)
+            ApplicationManager.getApplication().invokeAndWait { JpmProjectSetup.apply(project, loaded.infos) }
+
+            val modules = ModuleManager.getInstance(project).modules.associateBy { it.name }
+            assertSameElements(modules.keys, "tool", "demo", "api", "app")
+            val app = ModuleRootManager.getInstance(modules.getValue("app"))
+            assertTrue(app.sourceRootUrls.any { it.endsWith("fixtures/demo/app/src") })
+            assertEquals("api", app.orderEntries.filterIsInstance<ModuleOrderEntry>().single().moduleName)
+        } finally {
+            base.toFile().deleteRecursively()
+        }
+    }
+
+    /** A project that fails to load keeps what it had; the others load. */
+    fun testFailedProjectKeepsItsLastLoad() {
+        val base = Files.createTempDirectory("jpm-fail")
+        try {
+            val a = base.resolve("a").also { Files.createDirectories(it) }
+            val b = base.resolve("b").also { Files.createDirectories(it) }
+            fun info(dir: Path, name: String) = JpmProjectInfo().apply {
+                projectDir = dir.toString()
+                this.name = name
+                modules = listOf(JpmModuleInfo().apply { this.name = name; this.dir = dir.toString() })
+            }
+            val sync = JpmSync.get(project)
+            val first = sync.collectInfos(listOf(a, b), emptyMap()) { dir -> info(dir, dir.fileName.toString()) }
+            assertEquals(listOf("a", "b"), first.infos.map { it.name })
+
+            val second = sync.collectInfos(listOf(a, b), first.byRoot) { dir ->
+                if (dir == b) throw JpmSync.LoadException("b/project.jsonc:3: unknown field \"oops\"") else info(dir, "a2")
+            }
+            assertEquals(listOf("a2", "b"), second.infos.map { it.name })
+            assertEquals(1, second.failures.size)
+            assertTrue(second.failures.single().contains("unknown field"))
+
+            // never loaded: nothing to keep, the rest still loads
+            val third = sync.collectInfos(listOf(a, b), emptyMap()) { dir ->
+                if (dir == b) throw JpmSync.LoadException("broken") else info(dir, "a")
+            }
+            assertEquals(listOf("a"), third.infos.map { it.name })
         } finally {
             base.toFile().deleteRecursively()
         }

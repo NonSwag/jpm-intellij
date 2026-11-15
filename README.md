@@ -18,10 +18,12 @@ up: open a folder with a `project.jsonc` and it is ready to code in, with nothin
 - **Editing `project.jsonc`.** Completion, documentation and validation from jpm's JSON Schema, bundled
   with the plugin so it works offline and without a `"$schema"` line: unknown fields, wrong dependency
   keys, misspelled options and invalid values are underlined as you type.
-- **Nested projects.** A folder that is not a jpm project itself but has jpm projects in folders below it
-  (a monorepo, a backend next to a frontend) loads all of them. Each gets its own section in the tool
-  window, and its commands run in its folder. Folders inside a jpm project are its own business (a
-  workspace finds its modules itself), and hidden folders and build output are not searched.
+- **Nested projects.** Every jpm project in the opened folder is loaded: the folder's own, projects nested
+  inside it (test fixtures, examples), and projects in subfolders of a folder that is not one (a monorepo, a
+  backend next to a frontend). A workspace's modules load with their workspace. Each project gets its own
+  section in the tool window, and its commands run in its folder. Hidden folders and build output are not
+  searched. A nested project that fails to load (a deliberately broken fixture, say) keeps its last loaded
+  state and is reported, without holding up the others.
 - **Automatic reload.** Changes to `project.jsonc` or `project.lock` (from the editor, `jpm add`, a `git
   pull`) reload the project, and IntelliJ indexes what changed. **Tools | Reload jpm Project** reloads by
   hand.

@@ -57,13 +57,14 @@ object Jpm {
     private val skipped = setOf("node_modules", "build", "dist", "target", "out", "bin")
 
     /**
-     * The jpm projects in [base]: [base] itself if it has a project.jsonc, otherwise every folder below it
-     * that has one, down to [maxDepth] levels. A project's own folders are not searched further, since a
-     * workspace finds its modules itself; hidden folders and build output are skipped.
+     * Every folder with a project.jsonc in [base] (itself included), down to [maxDepth] levels, shallowest
+     * first: a project, the projects nested in it (test fixtures, examples), and projects in folders that are
+     * not projects themselves. Workspace modules are among them; [JpmSync] loads them through their
+     * workspace. Hidden folders and build output are skipped.
      */
-    fun findRoots(base: Path, maxDepth: Int = 4): List<Path> {
-        if (isJpmProject(base)) return listOf(base)
-        val out = ArrayList<Path>()
+    fun findRoots(base: Path, maxDepth: Int = 6): List<Path> {
+        val out = ArrayList<Pair<Int, Path>>()
+        if (isJpmProject(base)) out.add(0 to base)
         fun walk(dir: Path, depth: Int) {
             if (depth > maxDepth) return
             val children = try {
@@ -74,11 +75,12 @@ object Jpm {
             for (c in children) {
                 val name = c.fileName.toString()
                 if (name.startsWith(".") || name in skipped) continue
-                if (isJpmProject(c)) out.add(c) else walk(c, depth + 1)
+                if (isJpmProject(c)) out.add(depth to c)
+                walk(c, depth + 1)
             }
         }
         walk(base, 1)
-        return out
+        return out.sortedWith(compareBy({ it.first }, { it.second })).map { it.second }
     }
 
     fun isJpmProject(dir: Path): Boolean = Files.isRegularFile(dir.resolve(MANIFEST))

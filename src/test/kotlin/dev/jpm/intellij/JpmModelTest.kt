@@ -47,17 +47,17 @@ class JpmModelTest {
         val root = tmp.root.toPath()
         fun project(rel: String) = root.resolve(rel).also { Files.createDirectories(it) }.resolve(Jpm.MANIFEST).also { Files.writeString(it, "{}") }
         project("services/api")
-        project("services/api/inner")            // inside a project: its own business, not searched
+        project("services/api/fixtures/demo")    // nested inside a project: found too
         project("tools/cli")
         project("node_modules/pkg")              // dependencies, build output and hidden folders are skipped
         project(".git/x")
         project("build/y")
-        project("a/b/c/d/e/too-deep")
-        val found = Jpm.findRoots(root).map { root.relativize(it).toString() }
-        assertEquals(listOf("services/api", "tools/cli"), found)
+        project("a/b/c/d/e/f/g/too-deep")
+        fun found() = Jpm.findRoots(root).map { root.relativize(it).toString().ifEmpty { "." } }
+        assertEquals(listOf("services/api", "tools/cli", "services/api/fixtures/demo"), found())
 
-        project(".")                             // a project in the folder itself is the only one
-        assertEquals(listOf(root), Jpm.findRoots(root))
+        project(".")                             // the folder itself comes first, then what is below it
+        assertEquals(listOf(".", "services/api", "tools/cli", "services/api/fixtures/demo"), found())
     }
 
     @Test

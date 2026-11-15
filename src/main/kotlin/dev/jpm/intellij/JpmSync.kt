@@ -33,6 +33,10 @@ class JpmSync(private val project: Project) : Disposable {
     @Volatile
     private var cachedRoots: List<Path>? = null
 
+    /** The last successful load of each project folder, kept for projects that fail to load later. */
+    @Volatile
+    private var previous: Map<Path, JpmProjectInfo> = emptyMap()
+
     /** The folders of the jpm projects in this project (see [Jpm.findRoots]), searched once and after changes. */
     fun roots(): List<Path> {
         cachedRoots?.let { return it }
@@ -73,24 +77,32 @@ class JpmSync(private val project: Project) : Disposable {
         object : Task.Backgroundable(project, "Loading jpm project", true) {
             override fun run(indicator: ProgressIndicator) {
                 val roots = roots()
-                val parsed = ArrayList<JpmProjectInfo>()
-                for (dir in roots) {
+                val loaded = collectInfos(roots, previous) { dir ->
+                    indicator.checkCanceled()
                     indicator.text = "jpm info in ${relative(dir)}"
                     val out = Jpm.run(dir, listOf("info", "--json", "--ide"), indicator)
-                    if (indicator.isCanceled) return
+                    indicator.checkCanceled()
                     if (out.exitCode != 0) {
-                        // Applying the others would drop this project's modules, so nothing changes until it loads.
-                        val msg = out.stderr.ifBlank { out.stdout }.trim().lines().filterNot { it.startsWith("Picked up ") }.joinToString("\n")
-                        fail(if (roots.size > 1) "${relative(dir)}: $msg" else msg)
-                        return
+                        throw LoadException(out.stderr.ifBlank { out.stdout }.trim().lines().filterNot { it.startsWith("Picked up ") }.joinToString("\n"))
                     }
-                    parsed.add(JpmProjectInfo.parse(out.stdout))
+                    JpmProjectInfo.parse(out.stdout)
+                }
+                val parsed = loaded.infos
+                if (parsed.isEmpty() && loaded.failures.isNotEmpty()) {
+                    fail(loaded.failures.joinToString("\n"))
+                    return
                 }
                 ApplicationManager.getApplication().invokeAndWait({
                     if (!project.isDisposed) JpmProjectSetup.apply(project, parsed)
                 }, com.intellij.openapi.application.ModalityState.nonModal())
                 infos = parsed
-                error = null
+                previous = loaded.byRoot
+                error = loaded.failures.takeIf { it.isNotEmpty() }?.joinToString("\n")
+                if (loaded.failures.isNotEmpty()) {
+                    notify("Some jpm projects could not be loaded", loaded.failures.joinToString("\n") +
+                        "\nThey keep their last loaded state until they load again.", NotificationType.WARNING,
+                        listOf(NotificationAction.createSimple("Reload") { reload() }))
+                }
                 // jpm info may have written project.lock; that is part of this load, not a new change.
                 lastInputs = inputsHash()
                 parsed.flatMap { it.modules }.mapNotNull { m -> m.javaError?.let { "${m.name}: $it" } }.takeIf { it.isNotEmpty() }?.let {
@@ -161,6 +173,41 @@ class JpmSync(private val project: Project) : Disposable {
             if (Files.isRegularFile(f)) md.update(Files.readAllBytes(f))
         }
         return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    class LoadException(message: String) : RuntimeException(message)
+
+    class Loaded(val infos: List<JpmProjectInfo>, val byRoot: Map<Path, JpmProjectInfo>, val failures: List<String>)
+
+    /**
+     * Loads each jpm project among [roots] once: a folder that a project loaded before it covers (its
+     * workspace's modules) is not loaded again. A project that fails to load keeps its [previous] load, so
+     * its modules stay, and is reported in [Loaded.failures].
+     */
+    fun collectInfos(roots: List<Path>, previous: Map<Path, JpmProjectInfo>, load: (Path) -> JpmProjectInfo): Loaded {
+        val covered = HashSet<Path>()
+        val infos = ArrayList<JpmProjectInfo>()
+        val byRoot = LinkedHashMap<Path, JpmProjectInfo>()
+        val failures = ArrayList<String>()
+        fun norm(p: Path): Path = try { p.toRealPath() } catch (e: java.io.IOException) { p.toAbsolutePath().normalize() }
+        for (dir in roots) {
+            val key = norm(dir)
+            if (key in covered) continue
+            val info = try {
+                load(dir)
+            } catch (e: LoadException) {
+                failures.add((if (roots.size > 1) relative(dir) + ": " else "") + e.message)
+                previous[key]
+            } ?: continue
+            val projectDir = norm(Path.of(info.projectDir))
+            if (infos.any { norm(Path.of(it.projectDir)) == projectDir }) continue
+            covered.add(key)
+            covered.add(projectDir)
+            info.modules.forEach { covered.add(norm(Path.of(it.dir))) }
+            infos.add(info)
+            byRoot[key] = info
+        }
+        return Loaded(infos, byRoot, failures)
     }
 
     /** A folder as shown to the user: relative to the project folder. */
